@@ -1,0 +1,784 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpenF1 Control Deck</title>
+  <style>
+    :root {
+      --bg-0: #080a0f;
+      --bg-1: #0f131b;
+      --panel: #121825;
+      --ink: #f3f6ff;
+      --muted: #9aa7bf;
+      --accent: #ff2438;
+      --accent-hot: #ff7a00;
+      --track: #484e5e;
+      --line: #eef2fb;
+      --ok: #4fd18a;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      font-family: "Bahnschrift SemiCondensed", "Rajdhani", "Arial Narrow", sans-serif;
+      background:
+        radial-gradient(1100px 750px at 6% -8%, #2d3752 0%, transparent 62%),
+        linear-gradient(140deg, var(--bg-0) 0%, var(--bg-1) 58%, #0a0d13 100%);
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.02) 50%, transparent 100%),
+        repeating-linear-gradient(
+          135deg,
+          rgba(255, 255, 255, 0.015) 0 7px,
+          transparent 7px 14px
+        );
+      z-index: 0;
+    }
+
+    .wrap {
+      position: relative;
+      z-index: 1;
+      max-width: 1240px;
+      margin: 20px auto 28px;
+      padding: 0 16px;
+    }
+
+    .masthead {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px solid #273043;
+      background: linear-gradient(145deg, #111826 0%, #0c111a 100%);
+      box-shadow: 0 14px 28px rgba(0, 0, 0, 0.35);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .logo {
+      width: 78px;
+      height: 42px;
+      flex: 0 0 auto;
+    }
+
+    .brand-text {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .brand-text .open {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+    }
+
+    .brand-text .f1 {
+      color: var(--accent);
+      font-size: 30px;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+    }
+
+    .tagline {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+    }
+
+    .session-pill {
+      border: 1px solid #33445f;
+      background: linear-gradient(145deg, #1a2335 0%, #121a28 100%);
+      color: #cad5eb;
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: 12px;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin: 14px 0;
+    }
+
+    button {
+      border: 0;
+      background: linear-gradient(90deg, var(--accent) 0%, var(--accent-hot) 100%);
+      color: #ffffff;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border-radius: 8px;
+      padding: 0;
+      transform: skewX(-14deg);
+      cursor: pointer;
+      box-shadow: 0 8px 18px rgba(255, 36, 56, 0.35);
+    }
+
+    button span {
+      display: inline-block;
+      padding: 11px 16px;
+      transform: skewX(14deg);
+    }
+
+    .meta {
+      border: 1px solid #2e3b54;
+      background: #111827cc;
+      color: #d8e0f3;
+      border-radius: 8px;
+      padding: 9px 11px;
+      font-size: 13px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .stat {
+      border: 1px solid #2a3550;
+      background: linear-gradient(160deg, #141c2d 0%, #0f1622 100%);
+      border-radius: 10px;
+      padding: 10px 12px;
+      min-height: 74px;
+    }
+
+    .stat .label {
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .stat .value {
+      color: #f7f9ff;
+      font-size: 17px;
+      font-weight: 700;
+      word-break: break-word;
+    }
+
+    .stage {
+      border: 1px solid #2b3852;
+      border-radius: 12px;
+      overflow: hidden;
+      background:
+        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 0%, transparent 45%, rgba(255, 255, 255, 0.03) 100%),
+        linear-gradient(180deg, #161f31 0%, #111827 100%);
+      position: relative;
+    }
+
+    .stage::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        -45deg,
+        rgba(255, 255, 255, 0.018) 0 10px,
+        transparent 10px 20px
+      );
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 66vh;
+      min-height: 420px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .track-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    .track-driver {
+      position: absolute;
+      width: 32px;
+      height: 32px;
+      border-radius: 999px;
+      border: 2px solid #dbe4fb;
+      background: #0b121c;
+      overflow: hidden;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
+    }
+
+    .track-driver img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .track-driver.no-image {
+      display: grid;
+      place-items: center;
+      color: #f2f6ff;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+
+    .track-driver-badge {
+      position: absolute;
+      right: -8px;
+      bottom: -8px;
+      min-width: 17px;
+      height: 17px;
+      border-radius: 999px;
+      padding: 0 4px;
+      background: #0b121c;
+      color: #fff;
+      border: 1px solid #f1f6ff;
+      display: grid;
+      place-items: center;
+      font-size: 9px;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .error {
+      color: #ff7a8d;
+      margin-top: 8px;
+      white-space: pre-wrap;
+    }
+
+    .drivers {
+      margin-top: 14px;
+      border: 1px solid #2b3650;
+      border-radius: 10px;
+      background: #0d121bcc;
+      padding: 12px;
+    }
+
+    .drivers h3 {
+      margin: 0 0 10px;
+      color: #dce5f8;
+      font-size: 12px;
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+    }
+
+    .driver-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+    }
+
+    .driver-card {
+      border: 1px solid #25314a;
+      border-radius: 8px;
+      background: linear-gradient(155deg, #141c2b 0%, #0d1420 100%);
+      padding: 10px;
+    }
+
+    .driver-main {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .driver-face {
+      width: 48px;
+      height: 48px;
+      border-radius: 999px;
+      overflow: hidden;
+      border: 2px solid #d9e2f9;
+      background: #0d1421;
+      flex: 0 0 auto;
+    }
+
+    .driver-face img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .driver-face.is-empty {
+      display: grid;
+      place-items: center;
+      color: #e7efff;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+    }
+
+    .driver-ident {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .driver-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .driver-num {
+      color: var(--ok);
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+    }
+
+    .driver-acr {
+      color: #e4ebfb;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+    }
+
+    .driver-name {
+      color: #f8fbff;
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 4px;
+      word-break: break-word;
+    }
+
+    .driver-team {
+      color: #9fb0cf;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      word-break: break-word;
+    }
+
+    .empty-note {
+      color: var(--muted);
+      font-size: 13px;
+      padding: 6px 0;
+    }
+
+    @media (max-width: 760px) {
+      .brand-text .open {
+        font-size: 18px;
+      }
+
+      .brand-text .f1 {
+        font-size: 24px;
+      }
+
+      .tagline {
+        font-size: 11px;
+      }
+
+      .session-pill {
+        font-size: 11px;
+      }
+
+      canvas {
+        height: 58vh;
+        min-height: 340px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="masthead">
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 180 96" role="img" aria-label="OpenF1 logo">
+          <defs>
+            <linearGradient id="logoRed" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#ff2438" />
+              <stop offset="100%" stop-color="#ff7a00" />
+            </linearGradient>
+          </defs>
+          <polygon fill="url(#logoRed)" points="0,70 68,22 130,22 62,70" />
+          <polygon fill="#f3f6ff" points="80,70 150,22 180,22 110,70" />
+          <rect x="130" y="44" width="48" height="10" fill="#ff2438" />
+        </svg>
+        <div>
+          <div class="brand-text">
+            <span class="open">OPEN</span>
+            <span class="f1">F1</span>
+          </div>
+          <div class="tagline">Telemetry Control Deck</div>
+        </div>
+      </div>
+      <div class="session-pill" id="sessionPill">No Circuit</div>
+    </header>
+
+    <div class="toolbar">
+      <button id="loadBtn"><span>Load Track</span></button>
+      <div class="meta" id="meta">Noch keine Daten geladen.</div>
+    </div>
+
+    <section class="stats">
+      <article class="stat">
+        <div class="label">Circuit</div>
+        <div class="value" id="circuitValue">-</div>
+      </article>
+      <article class="stat">
+        <div class="label">Drivers</div>
+        <div class="value" id="driverCount">0</div>
+      </article>
+      <article class="stat">
+        <div class="label">Track Points</div>
+        <div class="value" id="pointCount">0</div>
+      </article>
+    </section>
+
+    <div class="stage">
+      <canvas id="trackCanvas"></canvas>
+      <div class="track-overlay" id="trackOverlay"></div>
+    </div>
+    <div class="error" id="errorBox"></div>
+
+    <section class="drivers">
+      <h3>Drivers</h3>
+      <div class="driver-grid" id="driverGrid"></div>
+    </section>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("trackCanvas");
+    const ctx = canvas.getContext("2d");
+    const loadBtn = document.getElementById("loadBtn");
+    const meta = document.getElementById("meta");
+    const errorBox = document.getElementById("errorBox");
+    const sessionPill = document.getElementById("sessionPill");
+    const circuitValue = document.getElementById("circuitValue");
+    const driverCount = document.getElementById("driverCount");
+    const pointCount = document.getElementById("pointCount");
+    const driverGrid = document.getElementById("driverGrid");
+    const trackOverlay = document.getElementById("trackOverlay");
+
+    let animationId = null;
+    let currentPoints = [];
+    let currentDrivers = [];
+
+    function resizeCanvas() {
+      const ratio = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.floor(rect.width * ratio);
+      canvas.height = Math.floor(rect.height * ratio);
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      if (currentPoints.length) {
+        drawTrack(currentPoints);
+        renderTrackDrivers(currentPoints, currentDrivers);
+      } else {
+        ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+        trackOverlay.innerHTML = "";
+      }
+    }
+
+    function bounds(points) {
+      const xs = points.map((p) => p.x);
+      const ys = points.map((p) => p.y);
+      return {
+        minX: Math.min(...xs),
+        maxX: Math.max(...xs),
+        minY: Math.min(...ys),
+        maxY: Math.max(...ys),
+      };
+    }
+
+    function createProjector(points) {
+      const b = bounds(points);
+      const pad = 34;
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+      const spanX = Math.max(1, b.maxX - b.minX);
+      const spanY = Math.max(1, b.maxY - b.minY);
+      const scale = Math.min((w - pad * 2) / spanX, (h - pad * 2) / spanY);
+
+      return (p) => {
+        const x = (p.x - b.minX) * scale + pad;
+        const y = h - ((p.y - b.minY) * scale + pad);
+        return { x, y };
+      };
+    }
+
+    function drawTrack(points, activeIndex = null) {
+      ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+      const project = createProjector(points);
+      const pp = points.map(project);
+
+      if (pp.length < 2) return;
+
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+
+      ctx.beginPath();
+      ctx.moveTo(pp[0].x, pp[0].y);
+      for (let i = 1; i < pp.length; i += 1) {
+        ctx.lineTo(pp[i].x, pp[i].y);
+      }
+      ctx.strokeStyle = "rgba(255, 36, 56, 0.22)";
+      ctx.lineWidth = 24;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(pp[0].x, pp[0].y);
+      for (let i = 1; i < pp.length; i += 1) {
+        ctx.lineTo(pp[i].x, pp[i].y);
+      }
+      ctx.strokeStyle = "#484e5e";
+      ctx.lineWidth = 16;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(pp[0].x, pp[0].y);
+      for (let i = 1; i < pp.length; i += 1) {
+        ctx.lineTo(pp[i].x, pp[i].y);
+      }
+      ctx.strokeStyle = "rgba(238, 242, 251, 0.8)";
+      ctx.lineWidth = 2.2;
+      ctx.setLineDash([10, 8]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const start = pp[0];
+      ctx.beginPath();
+      ctx.arc(start.x, start.y, 6.5, 0, Math.PI * 2);
+      ctx.fillStyle = "#ff2438";
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#f8fbff";
+      ctx.stroke();
+
+      const finish = pp[pp.length - 1];
+      const size = 10;
+      ctx.fillStyle = "#f8fbff";
+      ctx.fillRect(finish.x - size / 2, finish.y - size / 2, size, size);
+      ctx.fillStyle = "#161c2b";
+      ctx.fillRect(finish.x - size / 2, finish.y - size / 2, size / 2, size / 2);
+      ctx.fillRect(finish.x, finish.y, size / 2, size / 2);
+      ctx.strokeStyle = "#f8fbff";
+      ctx.strokeRect(finish.x - size / 2, finish.y - size / 2, size, size);
+
+      if (activeIndex !== null) {
+        const a = pp[activeIndex % pp.length];
+        ctx.beginPath();
+        ctx.arc(a.x, a.y, 7.5, 0, Math.PI * 2);
+        ctx.fillStyle = "#4fd18a";
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "#0a1018";
+        ctx.stroke();
+      }
+    }
+
+    function animate(points) {
+      let i = 0;
+      cancelAnimationFrame(animationId);
+      function step() {
+        drawTrack(points, i);
+        i += 1;
+        animationId = requestAnimationFrame(step);
+      }
+      step();
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function driverDisplayName(driver) {
+      if (driver.full_name) return driver.full_name;
+      const first = driver.first_name || "";
+      const last = driver.last_name || "";
+      const full = `${first} ${last}`.trim();
+      if (full) return full;
+      return driver.name_acronym || "Unknown Driver";
+    }
+
+    function renderTrackDrivers(points, drivers) {
+      trackOverlay.innerHTML = "";
+      if (points.length < 2 || !drivers.length) {
+        return;
+      }
+
+      const project = createProjector(points);
+      const fragment = document.createDocumentFragment();
+
+      for (const driver of drivers) {
+        const tp = driver && typeof driver === "object" ? driver.track_point : null;
+        if (!tp || typeof tp.x !== "number" || typeof tp.y !== "number") {
+          continue;
+        }
+
+        const projected = project(tp);
+        const marker = document.createElement("div");
+        marker.className = "track-driver";
+        marker.style.left = `${projected.x}px`;
+        marker.style.top = `${projected.y}px`;
+
+        const color = typeof driver.team_colour === "string" && driver.team_colour
+          ? `#${driver.team_colour.replace("#", "")}`
+          : "#dbe4fb";
+        marker.style.borderColor = color;
+
+        const fallback = (driver.name_acronym || String(driver.driver_number || "?")).slice(0, 3).toUpperCase();
+        const imageUrl = typeof driver.headshot_url === "string" ? driver.headshot_url : "";
+
+        if (imageUrl) {
+          const img = document.createElement("img");
+          img.src = imageUrl;
+          img.alt = driverDisplayName(driver);
+          img.loading = "lazy";
+          img.referrerPolicy = "no-referrer";
+          img.addEventListener("error", () => {
+            marker.classList.add("no-image");
+            marker.textContent = fallback;
+          });
+          marker.appendChild(img);
+        } else {
+          marker.classList.add("no-image");
+          marker.textContent = fallback;
+        }
+
+        const badge = document.createElement("span");
+        badge.className = "track-driver-badge";
+        badge.style.borderColor = color;
+        badge.textContent = String(driver.driver_number ?? "");
+        marker.appendChild(badge);
+
+        fragment.appendChild(marker);
+      }
+
+      trackOverlay.appendChild(fragment);
+    }
+
+    function renderDrivers(drivers) {
+      if (!drivers.length) {
+        driverGrid.innerHTML = '<div class="empty-note">Keine Fahrerdaten vorhanden.</div>';
+        return;
+      }
+
+      driverGrid.innerHTML = drivers
+        .map((driver) => {
+          const number = driver.driver_number ?? "-";
+          const acronym = driver.name_acronym || "";
+          const name = driverDisplayName(driver);
+          const team = driver.team_name || "Unknown Team";
+          const imageUrl = typeof driver.headshot_url === "string" ? driver.headshot_url : "";
+          const fallback = (acronym || String(number)).slice(0, 3).toUpperCase();
+          return `
+            <article class="driver-card">
+              <div class="driver-main">
+                <div class="driver-face${imageUrl ? "" : " is-empty"}">
+                  ${imageUrl
+                    ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(name)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove();this.parentElement.classList.add('is-empty');this.parentElement.textContent='${escapeHtml(fallback)}';" />`
+                    : `${escapeHtml(fallback)}`}
+                </div>
+                <div class="driver-ident">
+                  <div class="driver-top">
+                    <div class="driver-num">#${escapeHtml(number)}</div>
+                    <div class="driver-acr">${escapeHtml(acronym)}</div>
+                  </div>
+                  <div class="driver-name">${escapeHtml(name)}</div>
+                </div>
+              </div>
+              <div class="driver-team">${escapeHtml(team)}</div>
+            </article>
+          `;
+        })
+        .join("");
+    }
+
+    async function loadTrack() {
+      errorBox.textContent = "";
+      meta.textContent = "Lade Daten...";
+
+      try {
+        const res = await fetch("/api/run");
+        const raw = await res.text();
+        let data = {};
+        try {
+          data = JSON.parse(raw);
+        } catch {
+          throw new Error("Antwort ist kein gueltiges JSON.");
+        }
+
+        if (!res.ok) {
+          throw new Error(data.detail || data.error || `HTTP ${res.status}`);
+        }
+
+        const points = Array.isArray(data.points) ? data.points : [];
+        const drivers = Array.isArray(data.drivers) ? data.drivers : [];
+        const circuit = typeof data.circuit_name === "string" && data.circuit_name
+          ? data.circuit_name
+          : "Unknown Circuit";
+
+        sessionPill.textContent = circuit;
+        circuitValue.textContent = circuit;
+        pointCount.textContent = String(points.length);
+        driverCount.textContent = String(drivers.length);
+        renderDrivers(drivers);
+        currentDrivers = drivers;
+
+        if (points.length < 2) {
+          currentPoints = [];
+          cancelAnimationFrame(animationId);
+          ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+          trackOverlay.innerHTML = "";
+          meta.textContent = "Daten geladen, aber keine Track-Punkte vorhanden.";
+          return;
+        }
+
+        currentPoints = points;
+        drawTrack(points);
+        animate(points);
+        renderTrackDrivers(points, drivers);
+        meta.textContent = `Track geladen: ${circuit}`;
+      } catch (err) {
+        meta.textContent = "Fehler beim Laden.";
+        errorBox.textContent = String(err);
+      }
+    }
+
+    window.addEventListener("resize", () => {
+      resizeCanvas();
+    });
+    loadBtn.addEventListener("click", loadTrack);
+
+    resizeCanvas();
+  </script>
+</body>
+</html>
