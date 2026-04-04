@@ -50,7 +50,7 @@
     .wrap {
       position: relative;
       z-index: 1;
-      max-width: 1240px;
+      max-width: 1420px;
       margin: 20px auto 28px;
       padding: 0 16px;
     }
@@ -129,6 +129,66 @@
       margin: 14px 0;
     }
 
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 130px;
+    }
+
+    .control-group.wide {
+      min-width: 320px;
+      flex: 1;
+    }
+
+    .control-group.replay {
+      min-width: 420px;
+      flex: 2;
+    }
+
+    .control-label {
+      color: var(--muted);
+      font-size: 10px;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+    }
+
+    select {
+      border: 1px solid #2e3b54;
+      background: #111827cc;
+      color: #d8e0f3;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 13px;
+      outline: none;
+    }
+
+    select:focus {
+      border-color: #6f86b4;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .replay-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .replay-row input[type="range"] {
+      width: 240px;
+      accent-color: #ff2438;
+    }
+
+    .replay-value {
+      color: #d8e0f3;
+      font-size: 12px;
+      min-width: 70px;
+    }
+
     button {
       border: 0;
       background: linear-gradient(90deg, var(--accent) 0%, var(--accent-hot) 100%);
@@ -149,6 +209,22 @@
       transform: skewX(14deg);
     }
 
+    .mini-btn {
+      transform: none;
+      border-radius: 6px;
+      padding: 7px 10px;
+      font-size: 11px;
+      box-shadow: none;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      background: linear-gradient(90deg, #33445f 0%, #1d2a41 100%);
+    }
+
+    .mini-btn span {
+      transform: none;
+      padding: 0;
+    }
+
     .meta {
       border: 1px solid #2e3b54;
       background: #111827cc;
@@ -156,6 +232,8 @@
       border-radius: 8px;
       padding: 9px 11px;
       font-size: 13px;
+      min-width: 260px;
+      flex: 1;
     }
 
     .stats {
@@ -188,6 +266,85 @@
       word-break: break-word;
     }
 
+    .track-shell {
+      display: grid;
+      grid-template-columns: 250px 1fr;
+      gap: 12px;
+      align-items: stretch;
+    }
+
+    .leaderboard {
+      border: 1px solid #2b3650;
+      border-radius: 12px;
+      background: linear-gradient(160deg, #111a2b 0%, #0d1421 100%);
+      padding: 10px;
+      min-height: 420px;
+    }
+
+    .leaderboard h3 {
+      margin: 0 0 10px;
+      color: #dce5f8;
+      font-size: 12px;
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+    }
+
+    .position-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 66vh;
+      overflow: auto;
+      padding-right: 2px;
+    }
+
+    .position-row {
+      display: grid;
+      grid-template-columns: 32px 1fr auto;
+      gap: 8px;
+      align-items: center;
+      border: 1px solid #25314a;
+      border-radius: 8px;
+      background: linear-gradient(155deg, #141c2b 0%, #0d1420 100%);
+      padding: 8px;
+    }
+
+    .position-rank {
+      color: #f8fbff;
+      font-weight: 800;
+      font-size: 14px;
+      text-align: center;
+    }
+
+    .position-main {
+      min-width: 0;
+    }
+
+    .position-name {
+      color: #f8fbff;
+      font-weight: 700;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .position-meta {
+      color: #9fb0cf;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .position-lap {
+      color: #dce5f8;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
     .stage {
       border: 1px solid #2b3852;
       border-radius: 12px;
@@ -213,7 +370,7 @@
     canvas {
       display: block;
       width: 100%;
-      height: 66vh;
+      height: 74vh;
       min-height: 420px;
       position: relative;
       z-index: 1;
@@ -228,14 +385,16 @@
 
     .track-driver {
       position: absolute;
-      width: 32px;
-      height: 32px;
+      width: 24px;
+      height: 24px;
       border-radius: 999px;
       border: 2px solid #dbe4fb;
       background: #0b121c;
       overflow: hidden;
       transform: translate(-50%, -50%);
       box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
+      transition: left 850ms linear, top 850ms linear;
+      will-change: left, top;
     }
 
     .track-driver img {
@@ -249,25 +408,25 @@
       display: grid;
       place-items: center;
       color: #f2f6ff;
-      font-size: 11px;
+      font-size: 9px;
       font-weight: 800;
       letter-spacing: 0.04em;
     }
 
     .track-driver-badge {
       position: absolute;
-      right: -8px;
-      bottom: -8px;
-      min-width: 17px;
-      height: 17px;
+      right: -6px;
+      bottom: -6px;
+      min-width: 14px;
+      height: 14px;
       border-radius: 999px;
-      padding: 0 4px;
+      padding: 0 3px;
       background: #0b121c;
       color: #fff;
       border: 1px solid #f1f6ff;
       display: grid;
       place-items: center;
-      font-size: 9px;
+      font-size: 8px;
       font-weight: 800;
       line-height: 1;
     }
@@ -410,6 +569,20 @@
         min-height: 340px;
       }
     }
+
+    @media (max-width: 980px) {
+      .track-shell {
+        grid-template-columns: 1fr;
+      }
+
+      .leaderboard {
+        min-height: 0;
+      }
+
+      .position-list {
+        max-height: 240px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -439,7 +612,39 @@
     </header>
 
     <div class="toolbar">
-      <button id="loadBtn"><span>Load Track</span></button>
+      <div class="control-group">
+        <label class="control-label" for="modeSelect">Modus</label>
+        <select id="modeSelect">
+          <option value="live">Live</option>
+          <option value="history">Historisch</option>
+        </select>
+      </div>
+      <div class="control-group hidden" id="yearControl">
+        <label class="control-label" for="yearSelect">Jahr</label>
+        <select id="yearSelect"></select>
+      </div>
+      <div class="control-group wide hidden" id="sessionControl">
+        <label class="control-label" for="sessionSelect">Session</label>
+        <select id="sessionSelect"></select>
+      </div>
+      <div class="control-group replay hidden" id="replayControl">
+        <label class="control-label" for="replayTimeline">Replay</label>
+        <div class="replay-row">
+          <button class="mini-btn" id="replayBackBtn"><span>-1 Lap</span></button>
+          <button class="mini-btn" id="replayPlayPauseBtn"><span>Pause</span></button>
+          <button class="mini-btn" id="replayForwardBtn"><span>+1 Lap</span></button>
+          <select id="replaySpeedSelect">
+            <option value="1">1x</option>
+            <option value="2">2x</option>
+            <option value="4">4x</option>
+            <option value="8">8x</option>
+            <option value="16">16x</option>
+          </select>
+          <input id="replayTimeline" type="range" min="1" max="1" value="1" step="1" />
+          <div class="replay-value" id="replayTimelineValue">Lap 1</div>
+        </div>
+      </div>
+      <button id="loadBtn"><span id="loadBtnLabel">Live Laden</span></button>
       <div class="meta" id="meta">Noch keine Daten geladen.</div>
     </div>
 
@@ -456,11 +661,21 @@
         <div class="label">Track Points</div>
         <div class="value" id="pointCount">0</div>
       </article>
+      <article class="stat">
+        <div class="label">Lap</div>
+        <div class="value" id="lapValue">-/-</div>
+      </article>
     </section>
 
-    <div class="stage">
-      <canvas id="trackCanvas"></canvas>
-      <div class="track-overlay" id="trackOverlay"></div>
+    <div class="track-shell">
+      <aside class="leaderboard">
+        <h3>Positionen</h3>
+        <div class="position-list" id="positionList"></div>
+      </aside>
+      <div class="stage">
+        <canvas id="trackCanvas"></canvas>
+        <div class="track-overlay" id="trackOverlay"></div>
+      </div>
     </div>
     <div class="error" id="errorBox"></div>
 
@@ -470,315 +685,7 @@
     </section>
   </div>
 
-  <script>
-    const canvas = document.getElementById("trackCanvas");
-    const ctx = canvas.getContext("2d");
-    const loadBtn = document.getElementById("loadBtn");
-    const meta = document.getElementById("meta");
-    const errorBox = document.getElementById("errorBox");
-    const sessionPill = document.getElementById("sessionPill");
-    const circuitValue = document.getElementById("circuitValue");
-    const driverCount = document.getElementById("driverCount");
-    const pointCount = document.getElementById("pointCount");
-    const driverGrid = document.getElementById("driverGrid");
-    const trackOverlay = document.getElementById("trackOverlay");
-
-    let animationId = null;
-    let currentPoints = [];
-    let currentDrivers = [];
-
-    function resizeCanvas() {
-      const ratio = window.devicePixelRatio || 1;
-      const rect = canvas.getBoundingClientRect();
-      canvas.width = Math.floor(rect.width * ratio);
-      canvas.height = Math.floor(rect.height * ratio);
-      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-      if (currentPoints.length) {
-        drawTrack(currentPoints);
-        renderTrackDrivers(currentPoints, currentDrivers);
-      } else {
-        ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-        trackOverlay.innerHTML = "";
-      }
-    }
-
-    function bounds(points) {
-      const xs = points.map((p) => p.x);
-      const ys = points.map((p) => p.y);
-      return {
-        minX: Math.min(...xs),
-        maxX: Math.max(...xs),
-        minY: Math.min(...ys),
-        maxY: Math.max(...ys),
-      };
-    }
-
-    function createProjector(points) {
-      const b = bounds(points);
-      const pad = 34;
-      const w = canvas.clientWidth;
-      const h = canvas.clientHeight;
-      const spanX = Math.max(1, b.maxX - b.minX);
-      const spanY = Math.max(1, b.maxY - b.minY);
-      const scale = Math.min((w - pad * 2) / spanX, (h - pad * 2) / spanY);
-
-      return (p) => {
-        const x = (p.x - b.minX) * scale + pad;
-        const y = h - ((p.y - b.minY) * scale + pad);
-        return { x, y };
-      };
-    }
-
-    function drawTrack(points, activeIndex = null) {
-      ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-      const project = createProjector(points);
-      const pp = points.map(project);
-
-      if (pp.length < 2) return;
-
-      ctx.lineJoin = "round";
-      ctx.lineCap = "round";
-
-      ctx.beginPath();
-      ctx.moveTo(pp[0].x, pp[0].y);
-      for (let i = 1; i < pp.length; i += 1) {
-        ctx.lineTo(pp[i].x, pp[i].y);
-      }
-      ctx.strokeStyle = "rgba(255, 36, 56, 0.22)";
-      ctx.lineWidth = 24;
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.moveTo(pp[0].x, pp[0].y);
-      for (let i = 1; i < pp.length; i += 1) {
-        ctx.lineTo(pp[i].x, pp[i].y);
-      }
-      ctx.strokeStyle = "#484e5e";
-      ctx.lineWidth = 16;
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.moveTo(pp[0].x, pp[0].y);
-      for (let i = 1; i < pp.length; i += 1) {
-        ctx.lineTo(pp[i].x, pp[i].y);
-      }
-      ctx.strokeStyle = "rgba(238, 242, 251, 0.8)";
-      ctx.lineWidth = 2.2;
-      ctx.setLineDash([10, 8]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      const start = pp[0];
-      ctx.beginPath();
-      ctx.arc(start.x, start.y, 6.5, 0, Math.PI * 2);
-      ctx.fillStyle = "#ff2438";
-      ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = "#f8fbff";
-      ctx.stroke();
-
-      const finish = pp[pp.length - 1];
-      const size = 10;
-      ctx.fillStyle = "#f8fbff";
-      ctx.fillRect(finish.x - size / 2, finish.y - size / 2, size, size);
-      ctx.fillStyle = "#161c2b";
-      ctx.fillRect(finish.x - size / 2, finish.y - size / 2, size / 2, size / 2);
-      ctx.fillRect(finish.x, finish.y, size / 2, size / 2);
-      ctx.strokeStyle = "#f8fbff";
-      ctx.strokeRect(finish.x - size / 2, finish.y - size / 2, size, size);
-
-      if (activeIndex !== null) {
-        const a = pp[activeIndex % pp.length];
-        ctx.beginPath();
-        ctx.arc(a.x, a.y, 7.5, 0, Math.PI * 2);
-        ctx.fillStyle = "#4fd18a";
-        ctx.fill();
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = "#0a1018";
-        ctx.stroke();
-      }
-    }
-
-    function animate(points) {
-      let i = 0;
-      cancelAnimationFrame(animationId);
-      function step() {
-        drawTrack(points, i);
-        i += 1;
-        animationId = requestAnimationFrame(step);
-      }
-      step();
-    }
-
-    function escapeHtml(value) {
-      return String(value ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#39;");
-    }
-
-    function driverDisplayName(driver) {
-      if (driver.full_name) return driver.full_name;
-      const first = driver.first_name || "";
-      const last = driver.last_name || "";
-      const full = `${first} ${last}`.trim();
-      if (full) return full;
-      return driver.name_acronym || "Unknown Driver";
-    }
-
-    function renderTrackDrivers(points, drivers) {
-      trackOverlay.innerHTML = "";
-      if (points.length < 2 || !drivers.length) {
-        return;
-      }
-
-      const project = createProjector(points);
-      const fragment = document.createDocumentFragment();
-
-      for (const driver of drivers) {
-        const tp = driver && typeof driver === "object" ? driver.track_point : null;
-        if (!tp || typeof tp.x !== "number" || typeof tp.y !== "number") {
-          continue;
-        }
-
-        const projected = project(tp);
-        const marker = document.createElement("div");
-        marker.className = "track-driver";
-        marker.style.left = `${projected.x}px`;
-        marker.style.top = `${projected.y}px`;
-
-        const color = typeof driver.team_colour === "string" && driver.team_colour
-          ? `#${driver.team_colour.replace("#", "")}`
-          : "#dbe4fb";
-        marker.style.borderColor = color;
-
-        const fallback = (driver.name_acronym || String(driver.driver_number || "?")).slice(0, 3).toUpperCase();
-        const imageUrl = typeof driver.headshot_url === "string" ? driver.headshot_url : "";
-
-        if (imageUrl) {
-          const img = document.createElement("img");
-          img.src = imageUrl;
-          img.alt = driverDisplayName(driver);
-          img.loading = "lazy";
-          img.referrerPolicy = "no-referrer";
-          img.addEventListener("error", () => {
-            marker.classList.add("no-image");
-            marker.textContent = fallback;
-          });
-          marker.appendChild(img);
-        } else {
-          marker.classList.add("no-image");
-          marker.textContent = fallback;
-        }
-
-        const badge = document.createElement("span");
-        badge.className = "track-driver-badge";
-        badge.style.borderColor = color;
-        badge.textContent = String(driver.driver_number ?? "");
-        marker.appendChild(badge);
-
-        fragment.appendChild(marker);
-      }
-
-      trackOverlay.appendChild(fragment);
-    }
-
-    function renderDrivers(drivers) {
-      if (!drivers.length) {
-        driverGrid.innerHTML = '<div class="empty-note">Keine Fahrerdaten vorhanden.</div>';
-        return;
-      }
-
-      driverGrid.innerHTML = drivers
-        .map((driver) => {
-          const number = driver.driver_number ?? "-";
-          const acronym = driver.name_acronym || "";
-          const name = driverDisplayName(driver);
-          const team = driver.team_name || "Unknown Team";
-          const imageUrl = typeof driver.headshot_url === "string" ? driver.headshot_url : "";
-          const fallback = (acronym || String(number)).slice(0, 3).toUpperCase();
-          return `
-            <article class="driver-card">
-              <div class="driver-main">
-                <div class="driver-face${imageUrl ? "" : " is-empty"}">
-                  ${imageUrl
-                    ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(name)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove();this.parentElement.classList.add('is-empty');this.parentElement.textContent='${escapeHtml(fallback)}';" />`
-                    : `${escapeHtml(fallback)}`}
-                </div>
-                <div class="driver-ident">
-                  <div class="driver-top">
-                    <div class="driver-num">#${escapeHtml(number)}</div>
-                    <div class="driver-acr">${escapeHtml(acronym)}</div>
-                  </div>
-                  <div class="driver-name">${escapeHtml(name)}</div>
-                </div>
-              </div>
-              <div class="driver-team">${escapeHtml(team)}</div>
-            </article>
-          `;
-        })
-        .join("");
-    }
-
-    async function loadTrack() {
-      errorBox.textContent = "";
-      meta.textContent = "Lade Daten...";
-
-      try {
-        const res = await fetch("/api/run");
-        const raw = await res.text();
-        let data = {};
-        try {
-          data = JSON.parse(raw);
-        } catch {
-          throw new Error("Antwort ist kein gueltiges JSON.");
-        }
-
-        if (!res.ok) {
-          throw new Error(data.detail || data.error || `HTTP ${res.status}`);
-        }
-
-        const points = Array.isArray(data.points) ? data.points : [];
-        const drivers = Array.isArray(data.drivers) ? data.drivers : [];
-        const circuit = typeof data.circuit_name === "string" && data.circuit_name
-          ? data.circuit_name
-          : "Unknown Circuit";
-
-        sessionPill.textContent = circuit;
-        circuitValue.textContent = circuit;
-        pointCount.textContent = String(points.length);
-        driverCount.textContent = String(drivers.length);
-        renderDrivers(drivers);
-        currentDrivers = drivers;
-
-        if (points.length < 2) {
-          currentPoints = [];
-          cancelAnimationFrame(animationId);
-          ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-          trackOverlay.innerHTML = "";
-          meta.textContent = "Daten geladen, aber keine Track-Punkte vorhanden.";
-          return;
-        }
-
-        currentPoints = points;
-        drawTrack(points);
-        animate(points);
-        renderTrackDrivers(points, drivers);
-        meta.textContent = `Track geladen: ${circuit}`;
-      } catch (err) {
-        meta.textContent = "Fehler beim Laden.";
-        errorBox.textContent = String(err);
-      }
-    }
-
-    window.addEventListener("resize", () => {
-      resizeCanvas();
-    });
-    loadBtn.addEventListener("click", loadTrack);
-
-    resizeCanvas();
-  </script>
+  <script src="/app.js"></script>
 </body>
 </html>
+

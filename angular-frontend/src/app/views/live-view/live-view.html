@@ -1,0 +1,130 @@
+<div class="wrap">
+  <button
+    type="button"
+    class="always-fullscreen-btn"
+    (click)="toggleTrackFullscreen()"
+    [attr.aria-pressed]="isTrackFullscreen()"
+  >
+    {{ isTrackFullscreen() ? "Vollbild beenden" : "Vollbild" }}
+  </button>
+
+  <div class="track-shell" #trackShell>
+    <aside class="leaderboard">
+      <div class="leaderboard-head">
+        <h3>Live</h3>
+        <div class="status-pill" [class.warn]="liveUnavailable()">
+          Live {{ liveUnavailable() ? "offline" : "online" }} - {{ liveLatencyMs() ?? "-" }} ms
+        </div>
+      </div>
+
+      <div class="leaderboard-meta">
+        <div class="meta-item">
+          <span>Session</span>
+          <strong>{{ sessionTitle() }}</strong>
+        </div>
+        <div class="meta-item">
+          <span>Runde</span>
+          <strong>{{ currentLapDisplay() }}</strong>
+        </div>
+        <div class="meta-item">
+          <span>Zeit</span>
+          <strong>{{ elapsedTimeLabel() }}</strong>
+        </div>
+      </div>
+
+      <div class="leaderboard-actions">
+        <button
+          type="button"
+          class="control-btn"
+          (click)="toggleTrackFullscreen()"
+          [attr.aria-pressed]="isTrackFullscreen()"
+        >
+          {{ isTrackFullscreen() ? "Vollbild beenden" : "Vollbild" }}
+        </button>
+      </div>
+
+      <div class="position-list" [style.--driver-count]="driverLayoutCount()">
+        @for (driver of driversSorted(); track trackByDriver($index, driver); let i = $index) {
+          <article
+            class="position-row"
+            [class.radio-active]="isDriverRadioActive(driver.driver_number)"
+            [class.radio-solo]="isDriverSolo(driver.driver_number)"
+            role="button"
+            tabindex="0"
+            (click)="toggleSoloDriver(driver.driver_number)"
+            (keydown.enter)="toggleSoloDriver(driver.driver_number)"
+            (keydown.space)="toggleSoloDriver(driver.driver_number); $event.preventDefault()"
+          >
+            <div class="position-rank">P{{ driver.current_position ?? (i + 1) }}</div>
+            <div class="position-main">
+              <div class="position-name">{{ formatDriverName(driver) }}</div>
+              <div class="position-meta">{{ driver.team_name ?? "Team n/a" }}</div>
+            </div>
+            <div class="position-lap">
+              <span>Lap {{ driver.current_lap ?? "-" }}</span>
+              @if (isDriverRadioHighlighted(driver.driver_number)) {
+                <span class="speaker-icon">&#128266;</span>
+              }
+            </div>
+          </article>
+        } @empty {
+          <p class="empty">Keine Live-Fahrerpositionen verfuegbar.</p>
+        }
+      </div>
+    </aside>
+
+    <div class="stage">
+      <div class="stage-controls">
+        <div class="stage-actions">
+          <button
+            type="button"
+            class="control-btn"
+            (click)="toggleGlobalTeamRadio()"
+            [attr.aria-pressed]="globalTeamRadioEnabled()"
+            [attr.title]="globalTeamRadioEnabled() ? 'Team Radio an' : 'Team Radio aus'"
+            [class.is-muted]="!globalTeamRadioEnabled()"
+          >
+            @if (globalTeamRadioEnabled()) {
+              &#128266;
+            } @else {
+              &#128263;
+            }
+          </button>
+          <button
+            type="button"
+            class="control-btn"
+            (click)="toggleTrackFullscreen()"
+            [attr.aria-pressed]="isTrackFullscreen()"
+          >
+            {{ isTrackFullscreen() ? "Vollbild beenden" : "Vollbild" }}
+          </button>
+        </div>
+      </div>
+
+      @if (soloDriverNumber() !== null) {
+        <button
+          type="button"
+          class="control-btn solo-chip"
+          (click)="clearSoloDriver()"
+          title="Solo aufheben"
+        >
+          SOLO #{{ soloDriverNumber() }} X
+        </button>
+      }
+
+      <canvas #trackCanvas></canvas>
+
+      @if (loading()) {
+        <div class="stage-note">Loading track...</div>
+      }
+
+      @if (nowTalkingLabel(); as talkingLabel) {
+        <div class="radio-overlay">RADIO {{ talkingLabel }}</div>
+      }
+    </div>
+  </div>
+
+  @if (errorMessage()) {
+    <div class="error">{{ errorMessage() }}</div>
+  }
+</div>

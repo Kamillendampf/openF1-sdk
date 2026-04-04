@@ -1,0 +1,27 @@
+<header class="app-header">
+  <div class="brand">
+    <svg class="logo" viewBox="0 0 180 96" role="img" aria-label="OpenF1 logo">
+      <defs>
+        <linearGradient id="logoRedShell" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#ff2438" />
+          <stop offset="100%" stop-color="#ff7a00" />
+        </linearGradient>
+      </defs>
+      <polygon fill="url(#logoRedShell)" points="0,70 68,22 130,22 62,70" />
+      <polygon fill="#f3f6ff" points="80,70 150,22 180,22 110,70" />
+      <rect x="130" y="44" width="48" height="10" fill="#ff2438" />
+    </svg>
+    <div class="brand-text">
+      <span class="open">OPEN</span>
+      <span class="f1">F1</span>
+      <span class="tag">Control Deck</span>
+    </div>
+  </div>
+
+  <nav class="mode-nav" aria-label="App views">
+    <a routerLink="/live" routerLinkActive="is-active">Live</a>
+    <a routerLink="/history" routerLinkActive="is-active">Historie</a>
+  </nav>
+</header>
+
+<router-outlet />

@@ -1,0 +1,95 @@
+:host {
+  display: block;
+  color: #f3f6ff;
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #24314a;
+  background: rgba(10, 14, 22, 0.86);
+  backdrop-filter: blur(6px);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.logo {
+  width: 68px;
+  height: 38px;
+  flex: 0 0 auto;
+}
+
+.brand-text {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.open {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.f1 {
+  color: #ff2438;
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.tag {
+  color: #9aa7bf;
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.mode-nav {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid #33445f;
+  border-radius: 999px;
+  background: linear-gradient(145deg, #1a2335 0%, #121a28 100%);
+}
+
+.mode-nav a {
+  text-decoration: none;
+  color: #d9e3f8;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 7px 12px;
+  border-radius: 999px;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.mode-nav a.is-active {
+  color: #ffffff;
+  background: linear-gradient(90deg, #ff2438 0%, #ff7a00 100%);
+}
+
+@media (max-width: 760px) {
+  .app-header {
+    padding: 10px;
+  }
+
+  .tag {
+    display: none;
+  }
+}

@@ -1,11 +1,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping
+from datetime import datetime
+import logging
+from math import hypot
+from statistics import median
+from threading import RLock
+from time import monotonic
+from time import perf_counter
+from typing import TYPE_CHECKING
+from typing import Any, Callable, Mapping, TypeVar, cast
 
 from ..Models import CarData, Driver, F1BaseModel, Laps, Meeting, Position, RaceControl, Session, TeamRadio, Weather
 from .http import F1Config, HttpClient
 from ..resources import OpenF1Resources
+
+CacheValueT = TypeVar("CacheValueT")
+LOGGER = logging.getLogger("openf1.sdk")
+
+if TYPE_CHECKING:
+    from .live import OpenF1LiveClient
 
 
 @dataclass(frozen=True)
@@ -54,8 +68,12 @@ class OpenF1SDK:
     def __init__(self, config: F1Config | None = None):
         self.http = HttpClient(config or F1Config())
         self.resources = OpenF1Resources(self.http)
+        self._cache: dict[str, tuple[float, Any]] = {}
+        self._cache_lock = RLock()
+        LOGGER.debug("OpenF1SDK initialized.")
 
     def close(self) -> None:
+        LOGGER.debug("Closing OpenF1SDK HTTP client.")
         self.http.close()
 
     def __enter__(self) -> OpenF1SDK:
@@ -69,6 +87,195 @@ class OpenF1SDK:
 
     def resource_names(self) -> tuple[str, ...]:
         return self.resources.names()
+
+    def invalidate_cache(self, key: str | None = None) -> None:
+        with self._cache_lock:
+            if key is None:
+                self._cache.clear()
+                LOGGER.debug("SDK cache invalidated (all keys).")
+            else:
+                self._cache.pop(key, None)
+                LOGGER.debug("SDK cache invalidated (key=%s).", key)
+
+    def get_or_load_cached(
+        self,
+        key: str,
+        loader: Callable[[], CacheValueT],
+        *,
+        ttl_seconds: float = 60.0,
+        force_refresh: bool = False,
+    ) -> CacheValueT:
+        ttl = max(0.0, float(ttl_seconds))
+        if not force_refresh and ttl > 0:
+            now = monotonic()
+            with self._cache_lock:
+                cached = self._cache.get(key)
+            if cached is not None:
+                cached_at, cached_value = cached
+                if now - cached_at < ttl:
+                    LOGGER.debug("SDK cache hit (key=%s, ttl_seconds=%s).", key, ttl)
+                    return cast(CacheValueT, cached_value)
+                LOGGER.debug("SDK cache stale (key=%s, age_seconds=%.2f, ttl_seconds=%s).", key, now - cached_at, ttl)
+            else:
+                LOGGER.debug("SDK cache miss (key=%s).", key)
+        elif force_refresh:
+            LOGGER.debug("SDK cache force refresh (key=%s).", key)
+
+        value = loader()
+        with self._cache_lock:
+            self._cache[key] = (monotonic(), value)
+        LOGGER.debug("SDK cache store (key=%s).", key)
+        return value
+
+    def warmup_cache(
+        self,
+        loaders: Mapping[str, Callable[[], Any]],
+        *,
+        ttl_seconds: float = 60.0,
+        force_refresh: bool = True,
+    ) -> dict[str, Any]:
+        results: dict[str, Any] = {}
+        LOGGER.info("SDK cache warmup started (%d loaders).", len(loaders))
+        for key, loader in loaders.items():
+            results[key] = self.get_or_load_cached(
+                key=key,
+                loader=loader,
+                ttl_seconds=ttl_seconds,
+                force_refresh=force_refresh,
+            )
+        LOGGER.info("SDK cache warmup completed (%d entries).", len(results))
+        return results
+
+    def filter_track_points(
+        self,
+        track_points: list[dict[str, int]],
+        jump_factor: float = 15.0,
+        min_segment_size: int = 1,
+    ) -> list[dict[str, int]]:
+        if len(track_points) < 3:
+            return track_points
+
+        distances = [
+            hypot(
+                track_points[i + 1]["x"] - track_points[i]["x"],
+                track_points[i + 1]["y"] - track_points[i]["y"],
+            )
+            for i in range(len(track_points) - 1)
+        ]
+        non_zero_distances = [distance for distance in distances if distance > 0]
+        if not non_zero_distances:
+            return track_points
+
+        threshold = median(non_zero_distances) * jump_factor
+        if threshold <= 0:
+            return track_points
+
+        segments: list[list[dict[str, int]]] = []
+        current_segment = [track_points[0]]
+
+        for i, distance in enumerate(distances):
+            next_point = track_points[i + 1]
+            if distance > threshold:
+                if len(current_segment) >= min_segment_size:
+                    segments.append(current_segment)
+                current_segment = [next_point]
+                continue
+            current_segment.append(next_point)
+
+        if len(current_segment) >= min_segment_size:
+            segments.append(current_segment)
+
+        if not segments:
+            return track_points
+
+        return max(segments, key=len)
+
+    def get_track_points(self, session_latest: Session) -> list[dict[str, int]]:
+        started = perf_counter()
+        LOGGER.info(
+            "Track extraction started (session_key=%s, circuit_key=%s, session=%s/%s).",
+            session_latest.session_key,
+            session_latest.circuit_key,
+            session_latest.session_type,
+            session_latest.session_name,
+        )
+        session_type = session_latest.session_type
+        session_name = session_latest.session_name
+        current_year = session_latest.date_start
+        dt = datetime.fromisoformat(current_year)
+        last_year = current_year.replace(str(dt.year), str(dt.year - 1))
+        last_year_formated = datetime.fromisoformat(last_year).strftime("%Y")
+
+        circuit_key = session_latest.circuit_key
+
+        last_session = self.session.list(
+            circuit_key=circuit_key,
+            year=last_year_formated,
+            session_type=session_type,
+            session_name=session_name,
+        )
+        if not last_session:
+            LOGGER.warning("Track extraction aborted: no reference session found.")
+            return []
+
+        last_session_key = last_session[0].session_key
+        session_result = self.session_result.list(session_key=last_session_key, position=1)
+        if not session_result:
+            LOGGER.warning("Track extraction aborted: no session result for position=1 found.")
+            return []
+
+        driver_number = session_result[0].driver_number
+        locations = self.location.list(session_key=last_session_key, driver_number=driver_number)
+
+        track_points = [
+            {"x": location.x, "y": location.y, "z": location.z}
+            for location in locations
+        ]
+        filtered = self.filter_track_points(track_points)
+        LOGGER.info(
+            "Track extraction completed (raw_points=%d, filtered_points=%d, elapsed_ms=%d).",
+            len(track_points),
+            len(filtered),
+            int((perf_counter() - started) * 1000),
+        )
+        return filtered
+
+    def get_track(self, session_latest: Session) -> list[dict[str, int]]:
+        LOGGER.debug("get_track called (session_key=%s).", session_latest.session_key)
+        return self.get_track_points(session_latest)
+
+    def create_live_client(
+        self,
+        *,
+        token_provider: Callable[[bool], str | None],
+        username: str,
+        topics: tuple[str, ...] = ("v1/position", "v1/laps", "v1/location"),
+        use_websocket: bool = False,
+    ) -> OpenF1LiveClient:
+        from .live import OpenF1LiveClient
+
+        return OpenF1LiveClient(
+            self,
+            token_provider=token_provider,
+            username=username,
+            topics=topics,
+            use_websocket=use_websocket,
+        )
+
+    def create_live_race_client(
+        self,
+        *,
+        token_provider: Callable[[bool], str | None],
+        username: str,
+        topics: tuple[str, ...] = ("v1/position", "v1/laps", "v1/location"),
+        use_websocket: bool = False,
+    ) -> OpenF1LiveClient:
+        return self.create_live_client(
+            token_provider=token_provider,
+            username=username,
+            topics=topics,
+            use_websocket=use_websocket,
+        )
 
     def list_resource(
         self,

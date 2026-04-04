@@ -1,0 +1,30 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  color: #f3f6ff;
+  font-family: "Bahnschrift SemiCondensed", "Rajdhani", "Arial Narrow", sans-serif;
+  background:
+    radial-gradient(1100px 750px at 6% -8%, #2d3752 0%, transparent 62%),
+    linear-gradient(140deg, #080a0f 0%, #0f131b 58%, #0a0d13 100%);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.02) 50%, transparent 100%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.015) 0 7px, transparent 7px 14px);
+  z-index: 0;
+}
+
+app-root {
+  position: relative;
+  z-index: 1;
+}

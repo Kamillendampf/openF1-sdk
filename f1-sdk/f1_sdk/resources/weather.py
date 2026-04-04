@@ -18,7 +18,7 @@ class WeatherResource(ModelResource[Weather]):
         meeting_key: int | str | None = None,
         session_key: int | str | None = None,
         date: str | None = None,
-        humidity: int | None = None,
+        humidity: float | int | None = None,
         rainfall: int | None = None,
         params: Mapping[str, Any] | None = None,
         **filters: Any,

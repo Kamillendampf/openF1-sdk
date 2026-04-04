@@ -19,3 +19,11 @@ class OpenF1HTTPError(OpenF1Error):
         self.status_code = status_code
         self.request = request
         self.response = response
+
+
+class OpenF1AuthError(OpenF1Error):
+    """Raised when OAuth token retrieval/refresh fails."""
+
+
+class OpenF1LiveError(OpenF1Error):
+    """Raised for MQTT/Websocket live-stream related failures."""

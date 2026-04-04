@@ -89,13 +89,48 @@ def close() -> None:
 
 
 def __getattr__(name: str):
-    if name in {"F1Config", "SessionScope", "OpenF1NoDataError"}:
-        from .client import F1Config, SessionScope, OpenF1NoDataError
+    if name in {
+        "F1Config",
+        "SessionScope",
+        "OpenF1NoDataError",
+        "OpenF1AuthError",
+        "OpenF1LiveError",
+        "OpenF1LiveClient",
+        "OpenF1OAuthClient",
+        "OpenF1OAuthConfig",
+    }:
+        try:
+            from .client import (
+                F1Config,
+                OpenF1AuthError,
+                OpenF1LiveClient,
+                OpenF1LiveError,
+                OpenF1NoDataError,
+                OpenF1OAuthClient,
+                OpenF1OAuthConfig,
+                SessionScope,
+            )
+        except ModuleNotFoundError as exc:
+            if exc.name == "httpx":
+                raise ModuleNotFoundError(
+                    "Missing dependency 'httpx'. Install dependencies with: pip install -e ./f1-sdk"
+                ) from exc
+            raise
 
         if name == "F1Config":
             return F1Config
         if name == "OpenF1NoDataError":
             return OpenF1NoDataError
+        if name == "OpenF1AuthError":
+            return OpenF1AuthError
+        if name == "OpenF1LiveError":
+            return OpenF1LiveError
+        if name == "OpenF1LiveClient":
+            return OpenF1LiveClient
+        if name == "OpenF1OAuthClient":
+            return OpenF1OAuthClient
+        if name == "OpenF1OAuthConfig":
+            return OpenF1OAuthConfig
         return SessionScope
     return getattr(_ensure_sdk(), name)
 
@@ -129,6 +164,11 @@ __all__ = [
     "F1Config",
     "SessionScope",
     "OpenF1NoDataError",
+    "OpenF1AuthError",
+    "OpenF1LiveError",
+    "OpenF1LiveClient",
+    "OpenF1OAuthClient",
+    "OpenF1OAuthConfig",
     "configure",
     "close",
     "car_data",

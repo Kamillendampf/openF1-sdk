@@ -1,0 +1,208 @@
+<div class="wrap">
+  <button
+    type="button"
+    class="always-fullscreen-btn"
+    [disabled]="replayLoading()"
+    (click)="toggleTrackFullscreen()"
+    [attr.aria-pressed]="isTrackFullscreen()"
+  >
+    {{ isTrackFullscreen() ? "Vollbild beenden" : "Vollbild" }}
+  </button>
+
+  <header class="masthead">
+    <div class="head-text">
+      <div class="title">Historische Ansicht</div>
+      <div class="subtitle">{{ sessionTitle() }}</div>
+    </div>
+    <div class="lap-pill">Lap {{ lapDisplay() }}</div>
+  </header>
+
+  <div class="toolbar">
+    <div class="control-group">
+      <label class="control-label" for="historyYearSelect">Jahr</label>
+      <select
+        id="historyYearSelect"
+        [value]="currentYear()"
+        [disabled]="sessionsLoading() || replayLoading()"
+        (change)="onYearChange($event)"
+      >
+        @for (year of yearOptions; track year) {
+          <option [value]="year">{{ year }}</option>
+        }
+      </select>
+    </div>
+
+    <div class="control-group wide">
+      <label class="control-label" for="historySessionSelect">Session</label>
+      <select
+        id="historySessionSelect"
+        [value]="selectedSessionKey() ?? ''"
+        [disabled]="sessionsLoading() || replayLoading() || !sessions().length"
+        (change)="onSessionChange($event)"
+      >
+        @if (!sessions().length) {
+          <option value="">Keine Sessions gefunden</option>
+        } @else {
+          @for (session of sessions(); track session.session_key) {
+            <option [value]="session.session_key">{{ formatSessionLabel(session) }}</option>
+          }
+        }
+      </select>
+    </div>
+
+    <div class="control-group replay">
+      <label class="control-label" for="historyTimeline">Replay</label>
+      <div class="replay-row">
+        <button type="button" class="mini-btn" [disabled]="!canStepBack()" (click)="stepLap(-1)">-1 Lap</button>
+        <button
+          type="button"
+          class="mini-btn"
+          [disabled]="!hasReplay() || replayLoading()"
+          (click)="togglePlayback()"
+        >
+          {{ playbackPaused() ? "Play" : "Pause" }}
+        </button>
+        <button type="button" class="mini-btn" [disabled]="!canStepForward()" (click)="stepLap(1)">+1 Lap</button>
+
+        <select [value]="playbackSpeed()" [disabled]="!hasReplay()" (change)="onSpeedChange($event)">
+          <option value="1">1x</option>
+          <option value="2">2x</option>
+          <option value="4">4x</option>
+          <option value="8">8x</option>
+          <option value="16">16x</option>
+        </select>
+
+        <input
+          id="historyTimeline"
+          type="range"
+          [min]="firstLap()"
+          [max]="lastLap()"
+          [value]="timelineLap()"
+          step="1"
+          [disabled]="!hasReplay() || replayLoading()"
+          (input)="onTimelineInput($event)"
+          (change)="onTimelineChange($event)"
+        />
+        <div class="timeline-value">Lap {{ timelineLap() }}/{{ lastLap() }}</div>
+      </div>
+    </div>
+
+    <button class="load-btn" type="button" [disabled]="replayLoading()" (click)="reloadCurrentSession()">
+      Historie neu laden
+    </button>
+    <button class="load-btn" type="button" [disabled]="replayLoading()" (click)="toggleTrackFullscreen()">
+      {{ isTrackFullscreen() ? "Vollbild beenden" : "Vollbild" }}
+    </button>
+
+    <div class="meta">
+      @if (loading()) {
+        Lade Historie...
+      } @else if (sessionsLoading()) {
+        Sessions werden geladen...
+      } @else if (replayLoading()) {
+        Replay wird geladen...
+      } @else {
+        {{ metaMessage() }}
+      }
+    </div>
+  </div>
+
+  <section class="stats">
+    <article class="stat">
+      <div class="label">Circuit</div>
+      <div class="value">{{ replayInit()?.circuit_name ?? "-" }}</div>
+    </article>
+    <article class="stat">
+      <div class="label">Drivers</div>
+      <div class="value">{{ driversSorted().length }}</div>
+    </article>
+    <article class="stat">
+      <div class="label">Track Points</div>
+      <div class="value">{{ currentTrack().length }}</div>
+    </article>
+    <article class="stat">
+      <div class="label">Lap</div>
+      <div class="value">{{ lapDisplay() }}</div>
+    </article>
+  </section>
+
+  <div class="track-shell" #trackShell>
+    <aside class="leaderboard">
+      <h3>Positionen</h3>
+      <div class="position-list" [style.--driver-count]="driversSorted().length || 1">
+        @for (driver of driversSorted(); track trackByDriver($index, driver); let i = $index) {
+          <article class="position-row">
+            <div class="position-rank">P{{ driver.current_position ?? (i + 1) }}</div>
+            <div class="position-main">
+              <div class="position-name">{{ formatDriverName(driver) }}</div>
+              <div class="position-meta">{{ driver.team_name ?? "Team n/a" }}</div>
+            </div>
+            <div class="position-lap">Lap {{ driver.current_lap ?? "-" }}</div>
+          </article>
+        } @empty {
+          <div class="empty-note">Keine Positionsdaten vorhanden.</div>
+        }
+      </div>
+    </aside>
+
+    <div class="stage">
+      <button
+        type="button"
+        class="fullscreen-btn"
+        (click)="toggleGlobalTeamRadio()"
+        [attr.aria-pressed]="globalTeamRadioEnabled()"
+        [attr.title]="globalTeamRadioEnabled() ? 'Global Team Radio an' : 'Global Team Radio aus'"
+        [style.left]="'12px'"
+        [style.right]="'auto'"
+        [style.background]="globalTeamRadioEnabled() ? 'linear-gradient(90deg, #2f4f77 0%, #1d2a41 100%)' : 'linear-gradient(90deg, #5a2a35 0%, #2a1620 100%)'"
+      >
+        {{ globalTeamRadioEnabled() ? "🔊" : "🔇" }}
+      </button>
+      <button
+        type="button"
+        class="fullscreen-btn"
+        (click)="toggleTrackFullscreen()"
+        [attr.aria-pressed]="isTrackFullscreen()"
+      >
+        {{ isTrackFullscreen() ? "Vollbild beenden" : "Vollbild" }}
+      </button>
+      <canvas #trackCanvas></canvas>
+      @if (loading()) {
+        <div class="stage-note">Loading track...</div>
+      }
+    </div>
+  </div>
+
+  @if (errorMessage()) {
+    <div class="error">{{ errorMessage() }}</div>
+  }
+
+  <section class="drivers">
+    <h3>Drivers</h3>
+    <div class="driver-grid">
+      @for (driver of driversSorted(); track trackByDriver($index, driver)) {
+        <article class="driver-card">
+          <div class="driver-main">
+            <div class="driver-face">
+              @if (driver.headshot_url) {
+                <img [src]="driver.headshot_url" [alt]="formatDriverName(driver)" loading="lazy" referrerpolicy="no-referrer" />
+              } @else {
+                <span>{{ (driver.name_acronym ?? (driver.driver_number ?? "?")) }}</span>
+              }
+            </div>
+            <div class="driver-ident">
+              <div class="driver-top">
+                <span class="driver-num">#{{ driver.driver_number ?? "-" }}</span>
+                <span class="driver-pos">P{{ driver.current_position ?? "-" }}</span>
+              </div>
+              <div class="driver-name">{{ formatDriverName(driver) }}</div>
+              <div class="driver-team">{{ driver.team_name ?? "Team n/a" }}</div>
+            </div>
+          </div>
+        </article>
+      } @empty {
+        <div class="empty-note">Keine Fahrerdaten vorhanden.</div>
+      }
+    </div>
+  </section>
+</div>
