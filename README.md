@@ -2,7 +2,6 @@
 
 Die vollstaendige Dokumentation zur Facade und allen Resources findest du hier:
 
-- [f1-sdk/README.md](E:/dev/Nexora/openF1/f1-sdk/README.md)
 
 ## Installation
 
