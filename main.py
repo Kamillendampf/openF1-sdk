@@ -1,15 +1,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Callable, Optional
 
-from f1_sdk import OpenF1AuthError, OpenF1LiveClient, OpenF1LiveError, OpenF1OAuthClient, OpenF1OAuthConfig
+from f1_sdk import AsyncOpenF1SDK, OpenF1AuthError, OpenF1LiveClient, OpenF1LiveError, OpenF1OAuthClient, OpenF1OAuthConfig
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -26,11 +27,18 @@ TRACK_CACHE_TTL_SECONDS = 900.0
 
 _auth_client: OpenF1OAuthClient | None = None
 _live_client: OpenF1LiveClient | None = None
+_async_sdk: AsyncOpenF1SDK | None = None
 _live_username: str | None = None
 _mqtt_oauth_ready: bool = False
 _history_replay_cache: dict[int, dict[str, Any]] = {}
 _live_track_preload: dict[str, Any] | None = None
 LOGGER = logging.getLogger("openf1.app")
+
+
+def _require_async_sdk() -> AsyncOpenF1SDK:
+    if _async_sdk is None:
+        raise RuntimeError("Async OpenF1 SDK is not initialized.")
+    return _async_sdk
 
 
 def _is_truthy_env(var_name: str) -> bool:
@@ -78,6 +86,28 @@ def _cors_origins_from_env() -> list[str]:
         "http://localhost:4200",
         "http://127.0.0.1:4200",
     ]
+
+
+def _float_env(var_name: str, default: float) -> float:
+    raw_value = os.getenv(var_name, "").strip()
+    if not raw_value:
+        return default
+    try:
+        return float(raw_value)
+    except ValueError:
+        LOGGER.warning("Invalid float value for %s=%r. Using default=%s.", var_name, raw_value, default)
+        return default
+
+
+def _int_env(var_name: str, default: int) -> int:
+    raw_value = os.getenv(var_name, "").strip()
+    if not raw_value:
+        return default
+    try:
+        return int(raw_value)
+    except ValueError:
+        LOGGER.warning("Invalid integer value for %s=%r. Using default=%s.", var_name, raw_value, default)
+        return default
 
 
 def _track_cache_key(session_latest: Any) -> str:
@@ -175,6 +205,38 @@ def _resolve_live_track_points(session_latest: Any) -> tuple[list[dict[str, int]
     return track_points, track_key
 
 
+async def _resolve_live_track_points_async(session_latest: Any) -> tuple[list[dict[str, int]], str]:
+    sdk = _require_async_sdk()
+    track_key = _track_cache_key(session_latest)
+    cached = _live_track_preload
+    current_session_key = _session_key_str(getattr(session_latest, "session_key", None))
+
+    if cached is not None and cached.get("track_key") == track_key:
+        cached_points = cached.get("track_points")
+        if isinstance(cached_points, list):
+            return cached_points, track_key
+
+    track_points = await sdk.get_or_load_cached(
+        key=track_key,
+        loader=lambda: sdk.get_track(session_latest),
+        ttl_seconds=TRACK_CACHE_TTL_SECONDS,
+        force_refresh=False,
+    )
+    _update_live_track_preload(
+        session_latest=session_latest,
+        track_key=track_key,
+        track_points=track_points,
+        source="async_runtime_refresh",
+    )
+    LOGGER.info(
+        "Async live track resolved (session_key=%s, cache_key=%s, points=%d).",
+        current_session_key,
+        track_key,
+        len(track_points),
+    )
+    return track_points, track_key
+
+
 def _to_int(value: Any) -> int | None:
     if isinstance(value, bool):
         return None
@@ -192,6 +254,22 @@ def _to_int(value: Any) -> int | None:
 
 def _utc_now_iso_z() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _parse_utc_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _openf1_datetime(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _weather_condition(weather_row: Any) -> str:
@@ -234,6 +312,19 @@ def _weather_row_payload(weather_row: Any) -> dict[str, Any]:
     }
 
 
+def _car_data_row_payload(row: Any) -> dict[str, Any]:
+    return {
+        "date": getattr(row, "date", None),
+        "driver_number": getattr(row, "driver_number", None),
+        "speed": getattr(row, "speed", None),
+        "rpm": getattr(row, "rpm", None),
+        "n_gear": getattr(row, "n_gear", None),
+        "throttle": getattr(row, "throttle", None),
+        "brake": getattr(row, "brake", None),
+        "drs": getattr(row, "drs", None),
+    }
+
+
 def _snap_to_track_point(track_points: list[dict[str, int]], x: int, y: int, z: int) -> dict[str, int]:
     if not track_points:
         return {"x": x, "y": y, "z": z}
@@ -263,6 +354,33 @@ def _load_position_rows(session_key: int | str) -> list[Any]:
 
 def _build_position_rows_by_driver(session_key: int | str) -> dict[int, list[Any]]:
     rows = _load_position_rows(session_key)
+    rows_by_driver: dict[int, list[Any]] = {}
+    for row in rows:
+        driver_number = _to_int(getattr(row, "driver_number", None))
+        if driver_number is None:
+            continue
+        rows_by_driver.setdefault(driver_number, []).append(row)
+
+    for driver_rows in rows_by_driver.values():
+        driver_rows.sort(key=lambda item: item.date)
+    return rows_by_driver
+
+
+async def _build_position_rows_by_driver_async(session_key: int | str) -> dict[int, list[Any]]:
+    sdk = _require_async_sdk()
+    try:
+        rows = await sdk.position.alist(session_key=session_key)
+    except Exception as exc:  # noqa: BLE001
+        status_code = getattr(exc, "status_code", None)
+        if status_code == 404:
+            LOGGER.warning(
+                "Async position endpoint returned 404 (session_key=%s). Continuing without position rows.",
+                session_key,
+            )
+            rows = []
+        else:
+            raise
+
     rows_by_driver: dict[int, list[Any]] = {}
     for row in rows:
         driver_number = _to_int(getattr(row, "driver_number", None))
@@ -451,6 +569,74 @@ def _build_drivers_payload(
     return drivers_payload, len(position_rows), location_query_count
 
 
+async def _build_drivers_payload_async(
+    session_key: int | str,
+    track_points: list[dict[str, int]],
+) -> tuple[list[dict[str, Any]], int, int]:
+    sdk = _require_async_sdk()
+    drivers, position_rows = await asyncio.gather(
+        sdk.driver.alist(session_key=session_key),
+        sdk.position.alist(session_key=session_key),
+    )
+
+    latest_position_by_driver: dict[int, Any] = {}
+    for row in position_rows:
+        previous = latest_position_by_driver.get(row.driver_number)
+        if previous is None or row.date > previous.date:
+            latest_position_by_driver[row.driver_number] = row
+
+    async def latest_location(driver_number: int) -> tuple[int, Any | None]:
+        try:
+            locations = await sdk.location.alist(session_key=session_key, driver_number=driver_number)
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning(
+                "Async location query failed (session_key=%s, driver_number=%s): %s",
+                session_key,
+                driver_number,
+                exc,
+            )
+            return driver_number, None
+        if not locations:
+            return driver_number, None
+        return driver_number, max(locations, key=lambda location: location.date)
+
+    location_results = await asyncio.gather(*(latest_location(driver.driver_number) for driver in drivers))
+    latest_location_by_driver = dict(location_results)
+
+    drivers_payload: list[dict[str, Any]] = []
+    for driver in drivers:
+        payload = driver.model_dump()
+        payload["track_point"] = None
+        payload["current_position"] = None
+        payload["position_date"] = None
+
+        position_row = latest_position_by_driver.get(driver.driver_number)
+        if position_row is not None:
+            payload["current_position"] = position_row.position
+            payload["position_date"] = position_row.date
+
+        latest_location_row = latest_location_by_driver.get(driver.driver_number)
+        if latest_location_row is not None:
+            snapped = _snap_to_track_point(track_points, latest_location_row.x, latest_location_row.y, latest_location_row.z)
+            payload["track_point"] = {
+                "x": snapped["x"],
+                "y": snapped["y"],
+                "z": snapped["z"],
+                "date": latest_location_row.date,
+            }
+
+        drivers_payload.append(payload)
+
+    drivers_payload.sort(
+        key=lambda driver_row: (
+            driver_row["current_position"] is None,
+            driver_row["current_position"] if driver_row["current_position"] is not None else 999,
+            driver_row.get("driver_number", 999),
+        )
+    )
+    return drivers_payload, len(position_rows), len(drivers)
+
+
 def _build_driver_metadata_payload(
     session_key: int | str,
     track_points: list[dict[str, int]] | None = None,
@@ -512,6 +698,48 @@ def _build_driver_metadata_payload(
     return drivers_payload, position_row_count
 
 
+async def _build_driver_metadata_payload_async(
+    session_key: int | str,
+    track_points: list[dict[str, int]] | None = None,
+    position_rows_by_driver: dict[int, list[Any]] | None = None,
+) -> tuple[list[dict[str, Any]], int]:
+    sdk = _require_async_sdk()
+    drivers = await sdk.driver.alist(session_key=session_key)
+    if position_rows_by_driver is None:
+        position_rows_by_driver = await _build_position_rows_by_driver_async(session_key)
+    position_row_count = sum(len(rows) for rows in position_rows_by_driver.values())
+
+    first_position_by_driver: dict[int, Any] = {}
+    for driver_number, rows in position_rows_by_driver.items():
+        if rows:
+            first_position_by_driver[driver_number] = rows[0]
+
+    drivers_payload: list[dict[str, Any]] = []
+    for driver in drivers:
+        payload = driver.model_dump()
+        payload["track_point"] = None
+        payload["current_position"] = None
+        payload["position_date"] = None
+        payload["current_lap"] = 1
+        payload["lap_date"] = None
+
+        start_position_row = first_position_by_driver.get(driver.driver_number)
+        if start_position_row is not None:
+            payload["current_position"] = start_position_row.position
+            payload["position_date"] = start_position_row.date
+
+        drivers_payload.append(payload)
+
+    drivers_payload.sort(
+        key=lambda driver_row: (
+            driver_row["current_position"] is None,
+            driver_row["current_position"] if driver_row["current_position"] is not None else 999,
+            driver_row.get("driver_number", 999),
+        )
+    )
+    return drivers_payload, position_row_count
+
+
 def _session_lap_payload(session_key: int | str) -> dict[str, Any]:
     lap_max: int | None = None
     try:
@@ -520,6 +748,24 @@ def _session_lap_payload(session_key: int | str) -> dict[str, Any]:
             lap_max = _to_int(result_rows[0].number_of_laps)
     except Exception as exc:  # noqa: BLE001
         LOGGER.debug("Could not read lap summary for session_key=%s: %s", session_key, exc)
+
+    lap_current = lap_max
+    lap_display = f"{lap_current}/{lap_max}" if lap_current is not None and lap_max is not None else None
+    return {
+        "current": lap_current,
+        "max": lap_max,
+        "display": lap_display,
+    }
+
+
+async def _session_lap_payload_async(session_key: int | str) -> dict[str, Any]:
+    lap_max: int | None = None
+    try:
+        result_rows = await _require_async_sdk().session_result.alist(session_key=session_key, position=1)
+        if result_rows:
+            lap_max = _to_int(result_rows[0].number_of_laps)
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.debug("Could not read async lap summary for session_key=%s: %s", session_key, exc)
 
     lap_current = lap_max
     lap_display = f"{lap_current}/{lap_max}" if lap_current is not None and lap_max is not None else None
@@ -633,6 +879,29 @@ def _build_lap_window_map(session_key: int) -> tuple[dict[int, tuple[str, Option
         end: Optional[str] = None
         if idx + 1 < len(lap_numbers):
             end = first_start_by_lap[lap_numbers[idx + 1]]
+        windows[lap_number] = (start, end)
+
+    return windows, lap_numbers
+
+
+async def _build_lap_window_map_async(session_key: int) -> tuple[dict[int, tuple[str, Optional[str]]], list[int]]:
+    lap_rows = await _require_async_sdk().lap.alist(session_key=session_key)
+    first_start_by_lap: dict[int, str] = {}
+    for row in lap_rows:
+        if not row.date_start:
+            continue
+        lap_num = _to_int(row.lap_number)
+        if lap_num is None:
+            continue
+        current = first_start_by_lap.get(lap_num)
+        if current is None or row.date_start < current:
+            first_start_by_lap[lap_num] = row.date_start
+
+    lap_numbers = sorted(first_start_by_lap)
+    windows: dict[int, tuple[str, Optional[str]]] = {}
+    for index, lap_number in enumerate(lap_numbers):
+        start = first_start_by_lap[lap_number]
+        end = first_start_by_lap[lap_numbers[index + 1]] if index + 1 < len(lap_numbers) else None
         windows[lap_number] = (start, end)
 
     return windows, lap_numbers
@@ -764,6 +1033,99 @@ def _build_lap_events_for_window(
     return events, location_query_count
 
 
+async def _build_lap_events_for_window_async(
+    session_key: int,
+    track_points: list[dict[str, int]],
+    driver_numbers: list[int],
+    lap_number: int,
+    start: str,
+    end: Optional[str],
+    sample_step: int,
+    position_rows_by_driver: dict[int, list[Any]] | None = None,
+) -> tuple[list[dict[str, Any]], int]:
+    sdk = _require_async_sdk()
+    safe_step = max(1, int(sample_step))
+
+    async def load_locations(driver_number: int) -> tuple[int, list[Any]]:
+        query_params: dict[str, Any] = {"date>": start}
+        if end:
+            query_params["date<"] = end
+        try:
+            locations = await sdk.location.alist(
+                session_key=session_key,
+                driver_number=driver_number,
+                params=query_params,
+            )
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning(
+                "Async lap location query failed (session_key=%s, lap=%s, driver_number=%s): %s",
+                session_key,
+                lap_number,
+                driver_number,
+                exc,
+            )
+            locations = []
+
+        if not locations:
+            inclusive_query_params: dict[str, Any] = {"date>=": start}
+            if end:
+                inclusive_query_params["date<"] = end
+            try:
+                locations = await sdk.location.alist(
+                    session_key=session_key,
+                    driver_number=driver_number,
+                    params=inclusive_query_params,
+                )
+            except Exception:
+                locations = []
+        return driver_number, locations
+
+    location_results = await asyncio.gather(*(load_locations(driver_number) for driver_number in driver_numbers))
+    events: list[dict[str, Any]] = []
+
+    for driver_number, locations in location_results:
+        if position_rows_by_driver is not None:
+            driver_position_rows = position_rows_by_driver.get(driver_number, [])
+            position_rows = _position_rows_in_window(driver_position_rows, start=start, end=end)
+            seed_position_row = _latest_row_before(driver_position_rows, start)
+        else:
+            position_rows = []
+            seed_position_row = None
+        position_idx = 0
+        current_position = _to_int(seed_position_row.position) if seed_position_row is not None else None
+        current_position_date = seed_position_row.date if seed_position_row is not None else None
+
+        if not locations:
+            continue
+
+        locations.sort(key=lambda item: item.date)
+        last_idx = len(locations) - 1
+        for idx, location in enumerate(locations):
+            while position_idx < len(position_rows) and position_rows[position_idx].date <= location.date:
+                current_position = _to_int(position_rows[position_idx].position)
+                current_position_date = position_rows[position_idx].date
+                position_idx += 1
+            if safe_step > 1 and idx != last_idx and idx % safe_step != 0:
+                continue
+
+            snapped = _snap_to_track_point(track_points, location.x, location.y, location.z)
+            events.append(
+                {
+                    "date": location.date,
+                    "driver_number": driver_number,
+                    "x": snapped["x"],
+                    "y": snapped["y"],
+                    "z": snapped["z"],
+                    "lap_number": lap_number,
+                    "position": current_position,
+                    "position_date": current_position_date,
+                }
+            )
+
+    events.sort(key=lambda item: item["date"])
+    return events, len(driver_numbers)
+
+
 def _ensure_history_replay_context(session_key: int) -> dict[str, Any]:
     cached = _history_replay_cache.get(session_key)
     if cached is not None:
@@ -796,6 +1158,58 @@ def _ensure_history_replay_context(session_key: int) -> dict[str, Any]:
     lap_payload = _session_lap_payload(session.session_key)
     if lap_numbers and not isinstance(lap_payload.get("max"), int):
         lap_payload["max"] = lap_numbers[-1]
+
+    context = {
+        "session": session,
+        "track_points": track_points,
+        "drivers_payload": drivers_payload,
+        "driver_numbers": driver_numbers,
+        "lap_windows": lap_windows,
+        "lap_numbers": lap_numbers,
+        "lap_payload": lap_payload,
+        "position_row_count": position_row_count,
+        "position_rows_by_driver": position_rows_by_driver,
+    }
+    _history_replay_cache[session_key] = context
+    return context
+
+
+async def _ensure_history_replay_context_async(session_key: int) -> dict[str, Any]:
+    cached = _history_replay_cache.get(session_key)
+    if cached is not None:
+        return cached
+
+    sdk = _require_async_sdk()
+    rows = await sdk.session.alist(session_key=session_key)
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"Session not found: {session_key}")
+    session = rows[0]
+
+    track_key = _track_cache_key(session)
+    track_points = await sdk.get_or_load_cached(
+        key=track_key,
+        loader=lambda: sdk.get_track(session),
+        ttl_seconds=TRACK_CACHE_TTL_SECONDS,
+    )
+    position_rows_by_driver, lap_window_result, lap_payload = await asyncio.gather(
+        _build_position_rows_by_driver_async(session.session_key),
+        _build_lap_window_map_async(session.session_key),
+        _session_lap_payload_async(session.session_key),
+    )
+    lap_windows, lap_numbers = lap_window_result
+    if lap_numbers and not isinstance(lap_payload.get("max"), int):
+        lap_payload["max"] = lap_numbers[-1]
+
+    drivers_payload, position_row_count = await _build_driver_metadata_payload_async(
+        session.session_key,
+        track_points=track_points,
+        position_rows_by_driver=position_rows_by_driver,
+    )
+    driver_numbers = [
+        row["driver_number"]
+        for row in drivers_payload
+        if isinstance(row.get("driver_number"), int)
+    ]
 
     context = {
         "session": session,
@@ -862,7 +1276,7 @@ def _build_token_provider() -> Callable[[bool], str | None] | None:
 
 
 def system_init() -> None:
-    global _live_client, _mqtt_oauth_ready, _live_track_preload
+    global _async_sdk, _live_client, _mqtt_oauth_ready, _live_track_preload
 
     _configure_logging()
     LOGGER.info("System init started.")
@@ -883,15 +1297,18 @@ def system_init() -> None:
         bool(_live_username),
     )
     LOGGER.debug("OAuth runtime details (live_username=%s).", _email_for_logs(_live_username))
-    f1.configure(
-        f1.F1Config(
-            rate_limit_enabled=True,
-            pause_every_requests=6,
-            pause_seconds=1.0,
-            token_provider=token_provider,
-        )
+    sdk_config = f1.F1Config(
+        rate_limit_enabled=True,
+        pause_every_requests=4,
+        pause_seconds=1.0,
+        max_concurrent_requests=3,
+        retry_attempts=4,
+        retry_backoff_seconds=1.5,
+        token_provider=token_provider,
     )
-    LOGGER.info("OpenF1 SDK configured (rate_limit_enabled=%s, pause_every_requests=%s, pause_seconds=%s).", True, 6, 1.0)
+    f1.configure(sdk_config)
+    _async_sdk = AsyncOpenF1SDK(sdk_config)
+    LOGGER.info("OpenF1 SDK configured (rate_limit_enabled=%s, pause_every_requests=%s, pause_seconds=%s).", True, 4, 1.0)
     try:
         preload_started = perf_counter()
         latest_session = f1.session.latest()
@@ -925,16 +1342,28 @@ def system_init() -> None:
 
     if token_provider is not None and _live_username and _mqtt_oauth_ready:
         use_websocket = os.getenv("OPENF1_LIVE_USE_WEBSOCKET", "false").strip().lower() == "true"
+        mqtt_min_connect_interval_seconds = max(
+            0.0,
+            _float_env("OPENF1_LIVE_MIN_CONNECT_INTERVAL_SECONDS", 10.0),
+        )
+        mqtt_max_connections_per_process = max(
+            1,
+            _int_env("OPENF1_LIVE_MAX_CONNECTIONS_PER_PROCESS", 1),
+        )
         LOGGER.info(
-            "Initializing MQTT live client (transport=%s, username=%s).",
+            "Initializing MQTT live client (transport=%s, username=%s, min_connect_interval=%ss, max_process_connections=%s).",
             "wss" if use_websocket else "mqtts",
             _email_for_logs(_live_username),
+            mqtt_min_connect_interval_seconds,
+            mqtt_max_connections_per_process,
         )
         try:
             live_client = f1.create_live_client(
                 token_provider=token_provider,
                 username=_live_username,
                 use_websocket=use_websocket,
+                min_connect_interval_seconds=mqtt_min_connect_interval_seconds,
+                max_connections_per_process=mqtt_max_connections_per_process,
             )
             live_client.start()
             _live_client = live_client
@@ -962,8 +1391,8 @@ def system_init() -> None:
     )
 
 
-def system_shutdown() -> None:
-    global _auth_client, _live_client, _history_replay_cache, _mqtt_oauth_ready, _live_track_preload
+async def system_shutdown() -> None:
+    global _async_sdk, _auth_client, _live_client, _history_replay_cache, _mqtt_oauth_ready, _live_track_preload
 
     LOGGER.info("System shutdown started.")
     if _live_client is not None:
@@ -978,6 +1407,9 @@ def system_shutdown() -> None:
     _live_track_preload = None
     _history_replay_cache.clear()
     f1.close()
+    if _async_sdk is not None:
+        await _async_sdk.close()
+        _async_sdk = None
     LOGGER.info("System shutdown completed (server_ready=%s).", False)
 
 
@@ -996,7 +1428,7 @@ async def lifespan(_: FastAPI):
         yield
     finally:
         LOGGER.info("Application shutdown started (server_running=%s).", True)
-        system_shutdown()
+        await system_shutdown()
         LOGGER.info("Application shutdown complete (server_running=%s).", False)
 
 
@@ -1035,16 +1467,18 @@ def serve_angular_index() -> FileResponse:
     return _serve_angular_index()
 
 @app.get("/api/run")
-def run() -> dict[str, Any]:
+async def run() -> dict[str, Any]:
     request_started = perf_counter()
     LOGGER.info("GET /api/run started.")
     try:
-        sessions = f1.session.latest()
-        track_points, track_key = _resolve_live_track_points(sessions)
-        drivers_payload, position_row_count, location_query_count = _build_drivers_payload(
+        sdk = _require_async_sdk()
+        sessions = await sdk.session.alatest()
+        track_points, track_key = await _resolve_live_track_points_async(sessions)
+        drivers_payload, position_row_count, location_query_count = await _build_drivers_payload_async(
             session_key=sessions.session_key,
             track_points=track_points,
         )
+        lap_payload = await _session_lap_payload_async(sessions.session_key)
 
         payload = {
             "mode": "bootstrap",
@@ -1054,7 +1488,7 @@ def run() -> dict[str, Any]:
             "points": track_points,
             "circuit_name": sessions.circuit_short_name,
             "drivers": drivers_payload,
-            "lap": _session_lap_payload(sessions.session_key),
+            "lap": lap_payload,
         }
         LOGGER.info(
             "GET /api/run completed (circuit=%s, points=%d, drivers=%d, cache_key=%s, elapsed_ms=%d).",
@@ -1108,17 +1542,18 @@ def live() -> dict[str, Any]:
 
 
 @app.get("/api/insights/weather")
-def insights_weather(
+async def insights_weather(
     history_limit: int = Query(default=20, ge=1, le=120),
 ) -> dict[str, Any]:
     request_started = perf_counter()
     LOGGER.info("GET /api/insights/weather started (history_limit=%s).", history_limit)
     try:
-        session = f1.session.latest(meeting_key="latest", session_key="latest")
+        sdk = _require_async_sdk()
+        session = await sdk.session.alatest(meeting_key="latest", session_key="latest")
         cache_key = f"insights:weather:{session.session_key}"
-        weather_rows = f1.get_or_load_cached(
+        weather_rows = await sdk.get_or_load_cached(
             key=cache_key,
-            loader=lambda: f1.weather.list(session_key=session.session_key),
+            loader=lambda: sdk.weather.alist(session_key=session.session_key),
             ttl_seconds=3.0,
         )
         if not weather_rows:
@@ -1153,35 +1588,161 @@ def insights_weather(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@app.get("/api/insights/car-data")
+async def insights_car_data(
+    driver_number: int = Query(..., ge=1),
+) -> dict[str, Any]:
+    request_started = perf_counter()
+    LOGGER.info("GET /api/insights/car-data started (driver_number=%s).", driver_number)
+    try:
+        sdk = _require_async_sdk()
+        session = await sdk.session.alatest(meeting_key="latest", session_key="latest")
+        cache_key = f"insights:car_data:{session.session_key}:{driver_number}"
+        session_end = _parse_utc_datetime(getattr(session, "date_end", None))
+        now_utc = datetime.now(timezone.utc)
+        reference_time = min(now_utc, session_end) if session_end is not None else now_utc
+        window_seconds_used: int | None = None
+
+        async def load_car_rows() -> list[Any]:
+            nonlocal window_seconds_used
+            for window_seconds in (90, 300, 900):
+                start = reference_time - timedelta(seconds=window_seconds)
+                params = {"date>=": _openf1_datetime(start)}
+                LOGGER.debug(
+                    "Loading bounded car data (session_key=%s, driver_number=%s, window_seconds=%s, start=%s).",
+                    session.session_key,
+                    driver_number,
+                    window_seconds,
+                    params["date>="],
+                )
+                try:
+                    rows = await sdk.car_data.alist(
+                        session_key=session.session_key,
+                        driver_number=driver_number,
+                        params=params,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    status_code = getattr(exc, "status_code", None)
+                    message = str(exc)
+                    if status_code in {400, 404, 422} or any(
+                        marker in message for marker in ("400 Bad Request", "404 Not Found", "422 Unprocessable")
+                    ):
+                        LOGGER.info(
+                            "No bounded car data available (session_key=%s, driver_number=%s, status=%s, window_seconds=%s).",
+                            session.session_key,
+                            driver_number,
+                            status_code,
+                            window_seconds,
+                        )
+                        return []
+                    LOGGER.warning(
+                        "Bounded car data query failed (session_key=%s, driver_number=%s, window_seconds=%s): %s",
+                        session.session_key,
+                        driver_number,
+                        window_seconds,
+                        exc,
+                    )
+                    continue
+
+                if rows:
+                    window_seconds_used = window_seconds
+                    return rows
+
+            return []
+
+        rows = await sdk.get_or_load_cached(
+            key=cache_key,
+            loader=load_car_rows,
+            ttl_seconds=1.0,
+        )
+        if not rows:
+            LOGGER.info(
+                "Bounded car data returned no rows (session_key=%s, driver_number=%s). Skipping unbounded fallback to avoid large telemetry query.",
+                session.session_key,
+                driver_number,
+            )
+        sorted_rows = sorted(rows, key=lambda row: row.date)
+        latest = sorted_rows[-1] if sorted_rows else None
+        payload = {
+            "session_key": session.session_key,
+            "meeting_key": session.meeting_key,
+            "session_name": session.session_name,
+            "session_type": session.session_type,
+            "circuit_name": session.circuit_short_name,
+            "driver_number": driver_number,
+            "latest": _car_data_row_payload(latest) if latest is not None else None,
+            "window_seconds": window_seconds_used,
+            "generated_at": _utc_now_iso_z(),
+        }
+        LOGGER.info(
+            "GET /api/insights/car-data completed (session_key=%s, driver_number=%s, has_data=%s, elapsed_ms=%d).",
+            session.session_key,
+            driver_number,
+            latest is not None,
+            int((perf_counter() - request_started) * 1000),
+        )
+        return payload
+    except HTTPException:
+        LOGGER.exception("GET /api/insights/car-data failed with HTTPException.")
+        raise
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.exception("GET /api/insights/car-data failed.")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @app.get("/api/insights/team-radio")
-def insights_team_radio(
+async def insights_team_radio(
     limit: int = Query(default=30, ge=1, le=150),
 ) -> dict[str, Any]:
     request_started = perf_counter()
     LOGGER.info("GET /api/insights/team-radio started (limit=%s).", limit)
     try:
-        session = f1.session.latest(meeting_key="latest", session_key="latest")
+        sdk = _require_async_sdk()
+        session = await sdk.session.alatest(meeting_key="latest", session_key="latest")
         cache_key = f"insights:team_radio:{session.session_key}"
-        rows = f1.get_or_load_cached(
-            key=cache_key,
-            loader=lambda: f1.team_radio.list(session_key=session.session_key),
-            ttl_seconds=5.0,
+
+        async def load_team_radio_rows() -> list[Any]:
+            try:
+                return await sdk.team_radio.alist(session_key=session.session_key)
+            except Exception as exc:  # noqa: BLE001
+                status_code = getattr(exc, "status_code", None)
+                message = str(exc)
+                if status_code == 404 or "404 Not Found" in message:
+                    LOGGER.info(
+                        "No team radio data available for session_key=%s; returning empty list.",
+                        session.session_key,
+                    )
+                    return []
+                raise
+
+        rows, drivers = await asyncio.gather(
+            sdk.get_or_load_cached(
+                key=cache_key,
+                loader=load_team_radio_rows,
+                ttl_seconds=5.0,
+            ),
+            sdk.get_or_load_cached(
+                key=f"insights:drivers:{session.session_key}",
+                loader=lambda: sdk.driver.alist(session_key=session.session_key),
+                ttl_seconds=60.0,
+            ),
         )
         sorted_rows = sorted(rows, key=lambda row: row.date, reverse=True)
-        selected = sorted_rows[:limit]
 
-        drivers = f1.get_or_load_cached(
-            key=f"insights:drivers:{session.session_key}",
-            loader=lambda: f1.driver.list(session_key=session.session_key),
-            ttl_seconds=60.0,
-        )
         drivers_by_number: dict[int, dict[str, Any]] = {}
         for driver in drivers:
             drivers_by_number[driver.driver_number] = driver.model_dump()
 
         events = []
-        for row in selected:
-            driver_meta = drivers_by_number.get(row.driver_number, {})
+        skipped_rows = 0
+        for row in sorted_rows:
+            recording_url = getattr(row, "recording_url", None)
+            date = getattr(row, "date", None)
+            driver_number = getattr(row, "driver_number", None)
+            if not recording_url or not date or not isinstance(recording_url, str) or driver_number is None:
+                skipped_rows += 1
+                continue
+            driver_meta = drivers_by_number.get(driver_number, {})
             full_name = (
                 driver_meta.get("full_name")
                 or f"{driver_meta.get('first_name', '')} {driver_meta.get('last_name', '')}".strip()
@@ -1190,13 +1751,15 @@ def insights_team_radio(
             events.append(
                 {
                     "date": row.date,
-                    "driver_number": row.driver_number,
+                    "driver_number": driver_number,
                     "driver_name": full_name,
                     "team_name": driver_meta.get("team_name"),
                     "team_colour": driver_meta.get("team_colour"),
-                    "recording_url": row.recording_url,
+                    "recording_url": recording_url,
                 }
             )
+            if len(events) >= limit:
+                break
 
         payload = {
             "session_key": session.session_key,
@@ -1206,6 +1769,7 @@ def insights_team_radio(
             "circuit_name": session.circuit_short_name,
             "events": events,
             "count": len(events),
+            "skipped_count": skipped_rows,
             "generated_at": _utc_now_iso_z(),
         }
         LOGGER.info(
@@ -1224,7 +1788,7 @@ def insights_team_radio(
 
 
 @app.get("/api/history/sessions")
-def history_sessions(
+async def history_sessions(
     year: Optional[int] = Query(default=None),
     limit: int = Query(default=80, ge=1, le=400),
 ) -> dict[str, Any]:
@@ -1233,7 +1797,7 @@ def history_sessions(
         filters: dict[str, Any] = {}
         if year is not None:
             filters["year"] = year
-        session_rows = f1.session.list(**filters)
+        session_rows = await _require_async_sdk().session.alist(**filters)
         sorted_rows = sorted(session_rows, key=lambda row: row.date_start, reverse=True)
         selected_rows = sorted_rows[:limit]
 
@@ -1414,11 +1978,11 @@ def history_playback(
 
 
 @app.get("/api/history/replay/init")
-def history_replay_init(session_key: int = Query(...)) -> dict[str, Any]:
+async def history_replay_init(session_key: int = Query(...)) -> dict[str, Any]:
     request_started = perf_counter()
     LOGGER.info("GET /api/history/replay/init started (session_key=%s).", session_key)
     try:
-        context = _ensure_history_replay_context(session_key=session_key)
+        context = await _ensure_history_replay_context_async(session_key=session_key)
         session = context["session"]
         lap_numbers: list[int] = context["lap_numbers"]
         lap_payload = dict(context["lap_payload"])
@@ -1462,7 +2026,7 @@ def history_replay_init(session_key: int = Query(...)) -> dict[str, Any]:
 
 
 @app.get("/api/history/replay/lap")
-def history_replay_lap(
+async def history_replay_lap(
     session_key: int = Query(...),
     lap_number: int = Query(..., ge=1),
     sample_step: int = Query(default=1, ge=1, le=25),
@@ -1475,13 +2039,13 @@ def history_replay_lap(
         sample_step,
     )
     try:
-        context = _ensure_history_replay_context(session_key=session_key)
+        context = await _ensure_history_replay_context_async(session_key=session_key)
         lap_windows: dict[int, tuple[str, Optional[str]]] = context["lap_windows"]
         if lap_number not in lap_windows:
             raise HTTPException(status_code=404, detail=f"Lap not found: {lap_number}")
         start, end = lap_windows[lap_number]
 
-        events, location_query_count = _build_lap_events_for_window(
+        events, location_query_count = await _build_lap_events_for_window_async(
             session_key=session_key,
             track_points=context["track_points"],
             driver_numbers=context["driver_numbers"],
