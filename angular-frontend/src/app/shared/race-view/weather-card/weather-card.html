@@ -1,0 +1,34 @@
+@if (weather(); as weatherData) {
+  <section class="weather-card">
+    <div class="weather-head">
+      <div class="weather-visual" [ngClass]="visualClass()" [attr.aria-label]="conditionLabel()">
+        <span class="sun-shape"></span>
+        <span class="cloud-shape"></span>
+        <span class="rain-lines"></span>
+      </div>
+      <div class="weather-temps">
+        <div class="weather-temp">
+          <span>Luft</span>
+          <strong>{{ formatWeatherValue(weatherData.latest.air_temperature, "C") }}</strong>
+        </div>
+        <div class="weather-temp">
+          <span>Strecke</span>
+          <strong>{{ formatWeatherValue(weatherData.latest.track_temperature, "C") }}</strong>
+        </div>
+      </div>
+    </div>
+    <div class="wind-panel">
+      <div class="compass" aria-label="Windrichtung">
+        <span class="compass-label north">N</span>
+        <span class="compass-label east">E</span>
+        <span class="compass-label south">S</span>
+        <span class="compass-label west">W</span>
+        <span class="compass-arrow" [ngStyle]="windDirectionStyle(weatherData.latest.wind_direction)"></span>
+      </div>
+      <div class="wind-value">
+        <span>Wind</span>
+        <strong>{{ formatWeatherValue(weatherData.latest.wind_speed, "m/s") }}</strong>
+      </div>
+    </div>
+  </section>
+}

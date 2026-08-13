@@ -13,6 +13,8 @@ import { CommonModule } from '@angular/common';
 import { firstValueFrom } from 'rxjs';
 
 import { OpenF1ApiService } from '../../core/openf1-api.service';
+import { DriverGridComponent } from '../../shared/race-view/driver-grid/driver-grid';
+import { RaceLeaderboardComponent } from '../../shared/race-view/race-leaderboard/race-leaderboard';
 import {
   DriverPayload,
   HistoryReplayEventPayload,
@@ -25,6 +27,7 @@ import {
 const HISTORY_STEP_DURATION_MS = 1000;
 const HISTORY_MIN_STEP_DURATION_MS = 125;
 const HISTORY_SAMPLE_STEP = 1;
+const HISTORY_PREFETCH_CONCURRENCY = 2;
 
 type HistoryPlaybackFrame = {
   timestamp: string | null;
@@ -45,7 +48,7 @@ type DriverTimedEvent = {
 
 @Component({
   selector: 'app-history-view',
-  imports: [CommonModule],
+  imports: [CommonModule, DriverGridComponent, RaceLeaderboardComponent],
   templateUrl: './history-view.html',
   styleUrl: './history-view.scss',
 })
@@ -72,6 +75,7 @@ export class HistoryViewComponent implements AfterViewInit {
   readonly playbackSpeed = signal(1);
   readonly timelinePreviewLap = signal<number | null>(null);
   readonly globalTeamRadioEnabled = signal(true);
+  readonly prefetchRemaining = signal(0);
 
   readonly yearOptions = this.buildYearOptions();
 
@@ -139,6 +143,9 @@ export class HistoryViewComponent implements AfterViewInit {
   private baseDrivers: DriverPayload[] = [];
   private lapCache = new Map<number, HistoryReplayLapPayload>();
   private lapLoadPromises = new Map<number, Promise<HistoryReplayLapPayload>>();
+  private prefetchQueue: number[] = [];
+  private prefetchQueuedLaps = new Set<number>();
+  private activePrefetchCount = 0;
   private prefetchGeneration = 0;
   private playbackFrames: HistoryPlaybackFrame[] = [];
   private playbackFrameIndex = 0;
@@ -349,6 +356,7 @@ export class HistoryViewComponent implements AfterViewInit {
     this.stopPlayback();
     this.lapCache.clear();
     this.lapLoadPromises.clear();
+    this.resetPrefetchState();
     const generation = ++this.prefetchGeneration;
     this.playbackPaused.set(false);
     this.timelinePreviewLap.set(null);
@@ -374,6 +382,7 @@ export class HistoryViewComponent implements AfterViewInit {
     this.driverAnimationByNumber.clear();
     this.lastKnownTrackPointByDriver.clear();
     this.lapLoadPromises.clear();
+    this.resetPrefetchState();
     this.prefetchGeneration += 1;
     this.currentLap.set(1);
     this.timelinePreviewLap.set(null);
@@ -415,9 +424,12 @@ export class HistoryViewComponent implements AfterViewInit {
       return;
     }
 
-    this.replayLoading.set(true);
+    const hasCachedPayload = this.lapCache.has(lapNumber);
+    this.replayLoading.set(!hasCachedPayload);
     this.stopPlayback();
-    this.metaMessage.set(`Lade Lap ${lapNumber}...`);
+    if (!hasCachedPayload) {
+      this.metaMessage.set(`Lade Lap ${lapNumber}...`);
+    }
     try {
       const lapPayload = await this.getOrLoadLapPayload(sessionKey, lapNumber, generation);
       if (generation !== this.prefetchGeneration) {
@@ -436,7 +448,7 @@ export class HistoryViewComponent implements AfterViewInit {
         }
       }
       this.startPlayback(events);
-      this.prefetchUpcomingLaps(lapNumber, generation);
+      this.prefetchRemainingLaps(lapNumber, generation);
     } finally {
       this.replayLoading.set(false);
     }
@@ -542,7 +554,7 @@ export class HistoryViewComponent implements AfterViewInit {
     this.applyHistoryEvents(currentFrame.events);
     this.playbackFrameIndex += 1;
     if (this.playbackFrames.length - this.playbackFrameIndex <= 10) {
-      this.prefetchUpcomingLaps(this.currentLap(), this.prefetchGeneration);
+      this.prefetchRemainingLaps(this.currentLap(), this.prefetchGeneration);
     }
 
     const progress = Math.min(100, Math.round((this.playbackFrameIndex / this.playbackFrames.length) * 100));
@@ -919,7 +931,7 @@ export class HistoryViewComponent implements AfterViewInit {
     return request;
   }
 
-  private prefetchUpcomingLaps(currentLap: number, generation: number): void {
+  private prefetchRemainingLaps(currentLap: number, generation: number): void {
     if (generation !== this.prefetchGeneration) {
       return;
     }
@@ -932,10 +944,61 @@ export class HistoryViewComponent implements AfterViewInit {
     if (currentIndex === -1) {
       return;
     }
-    const nextLaps = laps.slice(currentIndex + 1, currentIndex + 2);
-    for (const lap of nextLaps) {
-      void this.getOrLoadLapPayload(sessionKey, lap, generation).catch(() => undefined);
+
+    const orderedLaps = [
+      ...laps.slice(currentIndex + 1),
+      ...laps.slice(0, currentIndex).reverse(),
+    ];
+
+    for (const lap of orderedLaps) {
+      if (this.lapCache.has(lap) || this.lapLoadPromises.has(lap) || this.prefetchQueuedLaps.has(lap)) {
+        continue;
+      }
+      this.prefetchQueue.push(lap);
+      this.prefetchQueuedLaps.add(lap);
     }
+
+    this.updatePrefetchRemaining();
+    this.drainPrefetchQueue(sessionKey, generation);
+  }
+
+  private drainPrefetchQueue(sessionKey: number, generation: number): void {
+    if (generation !== this.prefetchGeneration) {
+      return;
+    }
+
+    while (this.activePrefetchCount < HISTORY_PREFETCH_CONCURRENCY && this.prefetchQueue.length > 0) {
+      const lap = this.prefetchQueue.shift();
+      if (typeof lap !== 'number') {
+        continue;
+      }
+      this.prefetchQueuedLaps.delete(lap);
+      if (this.lapCache.has(lap) || this.lapLoadPromises.has(lap)) {
+        this.updatePrefetchRemaining();
+        continue;
+      }
+
+      this.activePrefetchCount += 1;
+      this.updatePrefetchRemaining();
+      void this.getOrLoadLapPayload(sessionKey, lap, generation)
+        .catch(() => undefined)
+        .finally(() => {
+          this.activePrefetchCount = Math.max(0, this.activePrefetchCount - 1);
+          this.updatePrefetchRemaining();
+          this.drainPrefetchQueue(sessionKey, generation);
+        });
+    }
+  }
+
+  private resetPrefetchState(): void {
+    this.prefetchQueue = [];
+    this.prefetchQueuedLaps.clear();
+    this.activePrefetchCount = 0;
+    this.prefetchRemaining.set(0);
+  }
+
+  private updatePrefetchRemaining(): void {
+    this.prefetchRemaining.set(this.prefetchQueue.length + this.activePrefetchCount);
   }
 
   private scheduleCanvasRetry(): void {

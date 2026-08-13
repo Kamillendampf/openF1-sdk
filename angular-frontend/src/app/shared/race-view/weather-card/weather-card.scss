@@ -1,0 +1,191 @@
+:host {
+  display: block;
+}
+
+.weather-card {
+  width: min(280px, calc(100vw - 34px));
+  border: 1px solid rgba(74, 92, 126, 0.78);
+  border-radius: 8px;
+  background: rgba(10, 16, 27, 0.86);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+  padding: 8px;
+  backdrop-filter: blur(12px);
+}
+
+.weather-head {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.weather-visual {
+  position: relative;
+  width: 64px;
+  height: 54px;
+}
+
+.sun-shape,
+.cloud-shape,
+.rain-lines {
+  position: absolute;
+  display: block;
+}
+
+.sun-shape {
+  width: 34px;
+  height: 34px;
+  left: 8px;
+  top: 4px;
+  border-radius: 50%;
+  background: #ffd35a;
+  box-shadow: 0 0 20px rgba(255, 180, 55, 0.45);
+}
+
+.cloud-shape {
+  width: 46px;
+  height: 18px;
+  left: 14px;
+  top: 25px;
+  border-radius: 999px;
+  background: #dce6f7;
+  box-shadow:
+    -10px 2px 0 0 #c4d2e8,
+    -2px -9px 0 3px #dce6f7,
+    15px -5px 0 2px #eef4ff;
+}
+
+.rain-lines {
+  left: 20px;
+  top: 45px;
+  width: 34px;
+  height: 11px;
+  background: repeating-linear-gradient(
+    115deg,
+    transparent 0 5px,
+    #6fd0ff 5px 7px,
+    transparent 7px 12px
+  );
+}
+
+.weather-visual.is-clear .cloud-shape,
+.weather-visual.is-clear .rain-lines,
+.weather-visual.is-cloudy .rain-lines,
+.weather-visual.is-rain .sun-shape {
+  display: none;
+}
+
+.weather-visual.is-cloudy .sun-shape {
+  left: 2px;
+  top: 2px;
+  width: 30px;
+  height: 30px;
+}
+
+.weather-visual.is-rain .cloud-shape {
+  left: 12px;
+  top: 13px;
+}
+
+.weather-temps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.weather-temp {
+  border: 1px solid #22304a;
+  border-radius: 6px;
+  background: #0b111dcc;
+  padding: 7px;
+  min-width: 0;
+}
+
+.weather-temp span,
+.weather-temp strong,
+.wind-value span,
+.wind-value strong {
+  display: block;
+  white-space: nowrap;
+}
+
+.weather-temp span,
+.wind-value span {
+  color: #9aa7bf;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.weather-temp strong,
+.wind-value strong {
+  margin-top: 3px;
+  color: #f7f9ff;
+  font-size: 13px;
+}
+
+.wind-panel {
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid #22304a;
+  padding-top: 9px;
+}
+
+.compass {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  border: 1px solid #22304a;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at center, #19243a 0 4px, transparent 5px),
+    linear-gradient(90deg, transparent 48%, #4b5d7d 49%, #4b5d7d 51%, transparent 52%),
+    linear-gradient(0deg, transparent 48%, #4b5d7d 49%, #4b5d7d 51%, transparent 52%), #111;
+}
+
+.compass-label {
+  position: absolute;
+  color: #aebbd2;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.compass-label.north {
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.compass-label.east {
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.compass-label.south {
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.compass-label.west {
+  left: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.compass-arrow {
+  position: absolute;
+  left: 50%;
+  top: 9px;
+  width: 0;
+  height: 20px;
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
+  border-bottom: 20px solid #7ee7ff;
+  transform-origin: 50% 20px;
+}

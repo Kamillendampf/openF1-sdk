@@ -1,0 +1,89 @@
+:host {
+  display: block;
+}
+
+.vehicle-card {
+  width: min(280px, calc(100vw - 34px));
+  border: 1px solid rgba(74, 92, 126, 0.78);
+  border-radius: 8px;
+  background: rgba(10, 16, 27, 0.86);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+  padding: 8px;
+  backdrop-filter: blur(12px);
+}
+
+.vehicle-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid #22304a;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+}
+
+.vehicle-head span,
+.speed-readout span,
+.vehicle-metric span {
+  display: block;
+  color: #9aa7bf;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.vehicle-head strong {
+  display: block;
+  margin-top: 3px;
+  color: #f7f9ff;
+  font-size: 15px;
+}
+
+.vehicle-head small {
+  color: #9fb0cf;
+  font-size: 10px;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.speed-readout {
+  border: 1px solid #22304a;
+  border-radius: 6px;
+  background: #0b111dcc;
+  padding: 9px;
+  margin-bottom: 8px;
+}
+
+.speed-readout strong {
+  display: block;
+  margin-top: 4px;
+  color: #f7f9ff;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.vehicle-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.vehicle-metric {
+  border: 1px solid #22304a;
+  border-radius: 6px;
+  background: #0b111dcc;
+  padding: 7px;
+  min-width: 0;
+}
+
+.vehicle-metric strong {
+  display: block;
+  margin-top: 3px;
+  color: #f7f9ff;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.empty-note {
+  color: #9fb0cf;
+  font-size: 12px;
+}

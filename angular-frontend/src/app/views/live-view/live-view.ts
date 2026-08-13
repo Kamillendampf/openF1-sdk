@@ -13,7 +13,12 @@ import { CommonModule } from '@angular/common';
 import { firstValueFrom } from 'rxjs';
 
 import { OpenF1ApiService } from '../../core/openf1-api.service';
+import { DriverGridComponent } from '../../shared/race-view/driver-grid/driver-grid';
+import { RaceLeaderboardComponent } from '../../shared/race-view/race-leaderboard/race-leaderboard';
+import { VehicleInfoCardComponent } from '../../shared/race-view/vehicle-info-card/vehicle-info-card';
+import { WeatherCardComponent } from '../../shared/race-view/weather-card/weather-card';
 import {
+  CarDataInsightsPayload,
   DriverPayload,
   LivePayload,
   RunPayload,
@@ -22,6 +27,8 @@ import {
   TrackPoint,
   WeatherInsightsPayload,
 } from '../../core/openf1.models';
+
+type TeamRadioPlaybackResult = 'played' | 'failed' | 'blocked';
 
 const LIVE_POLL_INTERVAL_MS = 1000;
 const WEATHER_POLL_INTERVAL_MS = 15000;
@@ -33,7 +40,7 @@ const TEAM_RADIO_SEEN_LIMIT = 240;
 
 @Component({
   selector: 'app-live-view',
-  imports: [CommonModule],
+  imports: [CommonModule, DriverGridComponent, RaceLeaderboardComponent, VehicleInfoCardComponent, WeatherCardComponent],
   templateUrl: './live-view.html',
   styleUrl: './live-view.scss',
 })
@@ -63,6 +70,7 @@ export class LiveViewComponent implements AfterViewInit {
   readonly live = signal<LivePayload | null>(null);
   readonly weather = signal<WeatherInsightsPayload | null>(null);
   readonly teamRadio = signal<TeamRadioInsightsPayload | null>(null);
+  readonly selectedCarData = signal<CarDataInsightsPayload | null>(null);
 
   readonly liveLatencyMs = signal<number | null>(null);
   readonly isTrackFullscreen = signal(false);
@@ -70,6 +78,8 @@ export class LiveViewComponent implements AfterViewInit {
   readonly soloDriverNumber = signal<number | null>(null);
   readonly activeRadioDriverNumbers = signal<number[]>([]);
   readonly nowTalkingDriverNumber = signal<number | null>(null);
+  readonly teamRadioAudioBlocked = signal(false);
+  readonly teamRadioClipErrorCount = signal(0);
   readonly heartbeatNowMs = signal(Date.now());
 
   readonly currentTrack = computed<TrackPoint[]>(() => {
@@ -114,6 +124,22 @@ export class LiveViewComponent implements AfterViewInit {
     return 'SUN';
   });
 
+  readonly weatherConditionLabel = computed<string>(() => {
+    const condition = this.weather()?.latest?.condition;
+    if (condition === 'rain') return 'Regen';
+    if (condition === 'cloudy') return 'Bewoelkt';
+    if (condition === 'hot') return 'Heiss';
+    if (condition === 'clear') return 'Klar';
+    return 'Wetter';
+  });
+
+  readonly weatherVisualClass = computed<string>(() => {
+    const condition = this.weather()?.latest?.condition;
+    if (condition === 'rain') return 'is-rain';
+    if (condition === 'cloudy') return 'is-cloudy';
+    return 'is-clear';
+  });
+
   readonly driversSorted = computed<DriverPayload[]>(() => {
     return [...this.currentDrivers()].sort((a, b) => {
       const posA = typeof a.current_position === 'number' ? a.current_position : 999;
@@ -127,6 +153,10 @@ export class LiveViewComponent implements AfterViewInit {
   });
 
   readonly nowTalkingLabel = computed<string | null>(() => {
+    if (this.teamRadioAudioBlocked()) {
+      return 'Audio wartet auf Freigabe';
+    }
+
     const solo = this.soloDriverNumber();
     if (solo !== null) {
       return `Solo #${solo}`;
@@ -139,6 +169,14 @@ export class LiveViewComponent implements AfterViewInit {
     const driver = this.currentDrivers().find((item) => item.driver_number === talkingNumber);
     const label = driver?.name_acronym ?? `#${talkingNumber}`;
     return `Funk aktiv ${label}`;
+  });
+
+  readonly selectedDriver = computed<DriverPayload | null>(() => {
+    const selectedNumber = this.soloDriverNumber();
+    if (selectedNumber === null) {
+      return null;
+    }
+    return this.currentDrivers().find((driver) => driver.driver_number === selectedNumber) ?? null;
   });
 
   readonly elapsedTimeLabel = computed<string>(() => {
@@ -234,8 +272,14 @@ export class LiveViewComponent implements AfterViewInit {
       return;
     }
     if (next || this.soloDriverNumber() !== null) {
+      this.teamRadioAudioBlocked.set(false);
       void this.playQueuedTeamRadio();
     }
+  }
+
+  enableTeamRadioAudio(): void {
+    this.teamRadioAudioBlocked.set(false);
+    void this.playQueuedTeamRadio();
   }
 
   toggleSoloDriver(driverNumber: number | null | undefined): void {
@@ -248,6 +292,8 @@ export class LiveViewComponent implements AfterViewInit {
     }
 
     this.soloDriverNumber.set(driverNumber);
+    this.selectedCarData.set(null);
+    this.teamRadioAudioBlocked.set(false);
     this.queuedTeamRadioEvents = [];
     this.stopTeamRadioPlayback();
     const latestEvent = this.latestTeamRadioByDriver.get(driverNumber);
@@ -255,10 +301,13 @@ export class LiveViewComponent implements AfterViewInit {
       this.queuedTeamRadioEvents.push(latestEvent);
       void this.playQueuedTeamRadio();
     }
+    void this.refreshSelectedCarData();
   }
 
   clearSoloDriver(): void {
     this.soloDriverNumber.set(null);
+    this.selectedCarData.set(null);
+    this.teamRadioAudioBlocked.set(false);
     if (!this.globalTeamRadioEnabled()) {
       this.queuedTeamRadioEvents = [];
       this.stopTeamRadioPlayback();
@@ -291,7 +340,7 @@ export class LiveViewComponent implements AfterViewInit {
   };
 
   trackByRadioDate = (_: number, event: TeamRadioInsightsPayload['events'][number]): string => {
-    return `${event.date}:${event.driver_number}`;
+    return `${event.date}:${event.driver_number}:${event.recording_url}`;
   };
 
   formatDriverName(driver: DriverPayload): string {
@@ -301,6 +350,26 @@ export class LiveViewComponent implements AfterViewInit {
     const full = `${first} ${last}`.trim();
     if (full) return full;
     return driver.name_acronym ?? `Driver ${driver.driver_number ?? '?'}`;
+  }
+
+  formatWeatherValue(value: number | null | undefined, suffix = '', digits = 1): string {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      return '-';
+    }
+    const rounded = value.toFixed(digits).replace(/\.0$/, '');
+    return suffix ? `${rounded} ${suffix}` : rounded;
+  }
+
+  windDirectionStyle(value: number | null | undefined): { transform: string } {
+    const degrees = typeof value === 'number' && Number.isFinite(value) ? value : 0;
+    return { transform: `rotate(${degrees}deg)` };
+  }
+
+  formatRainfall(value: number | null | undefined): string {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      return '-';
+    }
+    return value > 0 ? 'Ja' : 'Nein';
   }
 
   private async initialize(): Promise<void> {
@@ -329,6 +398,7 @@ export class LiveViewComponent implements AfterViewInit {
       this.live.set(payload);
       this.liveUnavailable.set(false);
       this.liveLatencyMs.set(Math.round(performance.now() - started));
+      await this.refreshSelectedCarData();
     } catch (error) {
       const status = this.httpStatus(error);
       if (status === 503) {
@@ -358,6 +428,21 @@ export class LiveViewComponent implements AfterViewInit {
     }
   }
 
+  private async refreshSelectedCarData(): Promise<void> {
+    const driverNumber = this.soloDriverNumber();
+    if (driverNumber === null) {
+      return;
+    }
+    try {
+      const payload = await firstValueFrom(this.api.getCarData(driverNumber));
+      if (this.soloDriverNumber() === driverNumber) {
+        this.selectedCarData.set(payload);
+      }
+    } catch (error) {
+      this.errorMessage.set(`Fahrzeugdaten konnten nicht geladen werden: ${this.toErrorMessage(error)}`);
+    }
+  }
+
   private startPolling(): void {
     this.stopPolling();
     this.pollHandles.push(window.setInterval(() => void this.refreshLive(), LIVE_POLL_INTERVAL_MS));
@@ -374,6 +459,7 @@ export class LiveViewComponent implements AfterViewInit {
   }
 
   private handleTeamRadioPayload(payload: TeamRadioInsightsPayload): void {
+    const isNewSession = this.teamRadioSessionKey !== payload.session_key;
     if (this.teamRadioSessionKey !== payload.session_key) {
       this.teamRadioSessionKey = payload.session_key;
       this.resetTeamRadioTracking();
@@ -388,6 +474,9 @@ export class LiveViewComponent implements AfterViewInit {
     for (const event of sortedEvents) {
       const driverNumber = event.driver_number;
       if (typeof driverNumber !== 'number') {
+        continue;
+      }
+      if (!this.isPlayableTeamRadioEvent(event)) {
         continue;
       }
 
@@ -408,7 +497,7 @@ export class LiveViewComponent implements AfterViewInit {
 
       this.seenTeamRadioEventKeys.add(eventKey);
       this.trimSeenTeamRadioEventKeys();
-      if (this.shouldPlayTeamRadioEvent(event)) {
+      if (!isNewSession && this.shouldPlayTeamRadioEvent(event)) {
         this.queuedTeamRadioEvents.push(event);
       }
     }
@@ -424,6 +513,7 @@ export class LiveViewComponent implements AfterViewInit {
     this.latestTeamRadioByDriver.clear();
     this.activeRadioDriverNumbers.set([]);
     this.nowTalkingDriverNumber.set(null);
+    this.teamRadioAudioBlocked.set(false);
     this.stopTeamRadioPlayback();
   }
 
@@ -475,6 +565,16 @@ export class LiveViewComponent implements AfterViewInit {
     return `${event.driver_number}:${event.date}:${event.recording_url}`;
   }
 
+  private isPlayableTeamRadioEvent(event: TeamRadioEventPayload): boolean {
+    if (!event.recording_url || typeof event.recording_url !== 'string') {
+      return false;
+    }
+    if (!event.date || !Number.isFinite(Date.parse(event.date))) {
+      return false;
+    }
+    return true;
+  }
+
   private formatDuration(durationMs: number): string {
     const totalSeconds = Math.floor(Math.max(0, durationMs) / 1000);
     const hours = Math.floor(totalSeconds / 3600);
@@ -504,6 +604,9 @@ export class LiveViewComponent implements AfterViewInit {
     if (this.isTeamRadioPlaybackRunning) {
       return;
     }
+    if (this.teamRadioAudioBlocked()) {
+      return;
+    }
     if (this.queuedTeamRadioEvents.length === 0) {
       return;
     }
@@ -516,9 +619,14 @@ export class LiveViewComponent implements AfterViewInit {
         if (!this.shouldPlayTeamRadioEvent(event)) continue;
         const source = event.recording_url;
         if (!source) continue;
-        const played = await this.playTeamRadioClip(source);
-        if (!played) {
+        const result = await this.playTeamRadioClip(source);
+        if (result === 'blocked') {
+          this.queuedTeamRadioEvents.unshift(event);
           break;
+        }
+        if (result === 'failed') {
+          this.teamRadioClipErrorCount.update((count) => count + 1);
+          continue;
         }
       }
     } finally {
@@ -526,15 +634,15 @@ export class LiveViewComponent implements AfterViewInit {
     }
   }
 
-  private async playTeamRadioClip(source: string): Promise<boolean> {
+  private async playTeamRadioClip(source: string): Promise<TeamRadioPlaybackResult> {
     const audio = this.ensureAudioElement();
     audio.pause();
     audio.src = source;
     audio.currentTime = 0;
 
-    return new Promise<boolean>((resolve) => {
+    return new Promise<TeamRadioPlaybackResult>((resolve) => {
       let resolved = false;
-      const complete = (result: boolean): void => {
+      const complete = (result: TeamRadioPlaybackResult): void => {
         if (resolved) return;
         resolved = true;
         audio.onended = null;
@@ -542,12 +650,22 @@ export class LiveViewComponent implements AfterViewInit {
         resolve(result);
       };
 
-      audio.onended = () => complete(true);
-      audio.onerror = () => complete(false);
+      audio.onended = () => complete('played');
+      audio.onerror = () => complete('failed');
 
       const playPromise = audio.play();
       if (playPromise) {
-        playPromise.catch(() => complete(false));
+        playPromise.catch((error: unknown) => {
+          const name = error instanceof DOMException ? error.name : '';
+          if (name === 'NotAllowedError') {
+            this.teamRadioAudioBlocked.set(true);
+            complete('blocked');
+            return;
+          }
+          complete('failed');
+        });
+      } else {
+        complete('played');
       }
     });
   }

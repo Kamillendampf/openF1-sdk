@@ -1,0 +1,41 @@
+<section class="vehicle-card">
+  <div class="vehicle-head">
+    <div>
+      <span>Fahrzeug</span>
+      <strong>{{ driverLabel() }}</strong>
+    </div>
+    <small>{{ teamLabel() }}</small>
+  </div>
+
+  @if (carData()?.latest; as data) {
+    <div class="speed-readout">
+      <span>Speed</span>
+      <strong>{{ formatNumber(data.speed, "km/h") }}</strong>
+    </div>
+
+    <div class="vehicle-grid">
+      <div class="vehicle-metric">
+        <span>Gang</span>
+        <strong>{{ formatNumber(data.n_gear) }}</strong>
+      </div>
+      <div class="vehicle-metric">
+        <span>RPM</span>
+        <strong>{{ formatNumber(data.rpm) }}</strong>
+      </div>
+      <div class="vehicle-metric">
+        <span>Throttle</span>
+        <strong>{{ formatPercent(data.throttle) }}</strong>
+      </div>
+      <div class="vehicle-metric">
+        <span>Brake</span>
+        <strong>{{ brakeLabel(data.brake) }}</strong>
+      </div>
+      <div class="vehicle-metric">
+        <span>DRS</span>
+        <strong>{{ drsLabel(data.drs) }}</strong>
+      </div>
+    </div>
+  } @else {
+    <div class="empty-note">Keine Fahrzeugdaten verfuegbar.</div>
+  }
+</section>

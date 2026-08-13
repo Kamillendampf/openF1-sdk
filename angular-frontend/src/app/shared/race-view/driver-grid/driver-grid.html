@@ -1,0 +1,28 @@
+<section class="drivers">
+  <h3>{{ title() }}</h3>
+  <div class="driver-grid">
+    @for (driver of drivers(); track trackByDriver($index, driver)) {
+      <article class="driver-card">
+        <div class="driver-main">
+          <div class="driver-face">
+            @if (driver.headshot_url) {
+              <img [src]="driver.headshot_url" [alt]="formatDriverName(driver)" loading="lazy" referrerpolicy="no-referrer" />
+            } @else {
+              <span>{{ driver.name_acronym ?? (driver.driver_number ?? "?") }}</span>
+            }
+          </div>
+          <div class="driver-ident">
+            <div class="driver-top">
+              <span class="driver-num">#{{ driver.driver_number ?? "-" }}</span>
+              <span class="driver-pos">P{{ driver.current_position ?? "-" }}</span>
+            </div>
+            <div class="driver-name">{{ formatDriverName(driver) }}</div>
+            <div class="driver-team">{{ driver.team_name ?? "Team n/a" }}</div>
+          </div>
+        </div>
+      </article>
+    } @empty {
+      <div class="empty-note">{{ emptyText() }}</div>
+    }
+  </div>
+</section>

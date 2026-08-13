@@ -1,13 +1,4 @@
 <div class="wrap">
-  <button
-    type="button"
-    class="always-fullscreen-btn"
-    (click)="toggleTrackFullscreen()"
-    [attr.aria-pressed]="isTrackFullscreen()"
-  >
-    {{ isTrackFullscreen() ? "Vollbild beenden" : "Vollbild" }}
-  </button>
-
   <div class="track-shell" #trackShell>
     <aside class="leaderboard">
       <div class="leaderboard-head">
@@ -32,49 +23,28 @@
         </div>
       </div>
 
-      <div class="leaderboard-actions">
-        <button
-          type="button"
-          class="control-btn"
-          (click)="toggleTrackFullscreen()"
-          [attr.aria-pressed]="isTrackFullscreen()"
-        >
-          {{ isTrackFullscreen() ? "Vollbild beenden" : "Vollbild" }}
-        </button>
-      </div>
-
-      <div class="position-list" [style.--driver-count]="driverLayoutCount()">
-        @for (driver of driversSorted(); track trackByDriver($index, driver); let i = $index) {
-          <article
-            class="position-row"
-            [class.radio-active]="isDriverRadioActive(driver.driver_number)"
-            [class.radio-solo]="isDriverSolo(driver.driver_number)"
-            role="button"
-            tabindex="0"
-            (click)="toggleSoloDriver(driver.driver_number)"
-            (keydown.enter)="toggleSoloDriver(driver.driver_number)"
-            (keydown.space)="toggleSoloDriver(driver.driver_number); $event.preventDefault()"
-          >
-            <div class="position-rank">P{{ driver.current_position ?? (i + 1) }}</div>
-            <div class="position-main">
-              <div class="position-name">{{ formatDriverName(driver) }}</div>
-              <div class="position-meta">{{ driver.team_name ?? "Team n/a" }}</div>
-            </div>
-            <div class="position-lap">
-              <span>Lap {{ driver.current_lap ?? "-" }}</span>
-              @if (isDriverRadioHighlighted(driver.driver_number)) {
-                <span class="speaker-icon">&#128266;</span>
-              }
-            </div>
-          </article>
-        } @empty {
-          <p class="empty">Keine Live-Fahrerpositionen verfuegbar.</p>
-        }
-      </div>
+      <app-race-leaderboard
+        [drivers]="driversSorted()"
+        [interactive]="true"
+        [activeDriverNumbers]="activeRadioDriverNumbers()"
+        [soloDriverNumber]="soloDriverNumber()"
+        emptyText="Keine Live-Fahrerpositionen verfuegbar."
+        (driverSelected)="toggleSoloDriver($event)"
+      ></app-race-leaderboard>
     </aside>
 
     <div class="stage">
-      <div class="stage-controls">
+      <div class="stage-topbar">
+        <app-weather-card class="weather-panel" [weather]="weather()"></app-weather-card>
+
+        @if (soloDriverNumber() !== null) {
+          <app-vehicle-info-card
+            class="vehicle-panel"
+            [carData]="selectedCarData()"
+            [driver]="selectedDriver()"
+          ></app-vehicle-info-card>
+        }
+
         <div class="stage-actions">
           <button
             type="button"
@@ -85,11 +55,21 @@
             [class.is-muted]="!globalTeamRadioEnabled()"
           >
             @if (globalTeamRadioEnabled()) {
-              &#128266;
+              RADIO
             } @else {
-              &#128263;
+              MUTE
             }
           </button>
+          @if (teamRadioAudioBlocked()) {
+            <button
+              type="button"
+              class="control-btn is-attention"
+              (click)="enableTeamRadioAudio()"
+              title="Team Radio Audio freigeben"
+            >
+              AUDIO
+            </button>
+          }
           <button
             type="button"
             class="control-btn"
@@ -127,4 +107,6 @@
   @if (errorMessage()) {
     <div class="error">{{ errorMessage() }}</div>
   }
+
+  <app-driver-grid [drivers]="driversSorted()"></app-driver-grid>
 </div>

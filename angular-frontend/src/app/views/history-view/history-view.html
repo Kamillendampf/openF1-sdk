@@ -1,14 +1,4 @@
 <div class="wrap">
-  <button
-    type="button"
-    class="always-fullscreen-btn"
-    [disabled]="replayLoading()"
-    (click)="toggleTrackFullscreen()"
-    [attr.aria-pressed]="isTrackFullscreen()"
-  >
-    {{ isTrackFullscreen() ? "Vollbild beenden" : "Vollbild" }}
-  </button>
-
   <header class="masthead">
     <div class="head-text">
       <div class="title">Historische Ansicht</div>
@@ -90,9 +80,6 @@
     <button class="load-btn" type="button" [disabled]="replayLoading()" (click)="reloadCurrentSession()">
       Historie neu laden
     </button>
-    <button class="load-btn" type="button" [disabled]="replayLoading()" (click)="toggleTrackFullscreen()">
-      {{ isTrackFullscreen() ? "Vollbild beenden" : "Vollbild" }}
-    </button>
 
     <div class="meta">
       @if (loading()) {
@@ -101,6 +88,8 @@
         Sessions werden geladen...
       } @else if (replayLoading()) {
         Replay wird geladen...
+      } @else if (prefetchRemaining() > 0) {
+        {{ metaMessage() }} | Cache laedt {{ prefetchRemaining() }} Runden
       } @else {
         {{ metaMessage() }}
       }
@@ -128,21 +117,7 @@
 
   <div class="track-shell" #trackShell>
     <aside class="leaderboard">
-      <h3>Positionen</h3>
-      <div class="position-list" [style.--driver-count]="driversSorted().length || 1">
-        @for (driver of driversSorted(); track trackByDriver($index, driver); let i = $index) {
-          <article class="position-row">
-            <div class="position-rank">P{{ driver.current_position ?? (i + 1) }}</div>
-            <div class="position-main">
-              <div class="position-name">{{ formatDriverName(driver) }}</div>
-              <div class="position-meta">{{ driver.team_name ?? "Team n/a" }}</div>
-            </div>
-            <div class="position-lap">Lap {{ driver.current_lap ?? "-" }}</div>
-          </article>
-        } @empty {
-          <div class="empty-note">Keine Positionsdaten vorhanden.</div>
-        }
-      </div>
+      <app-race-leaderboard [drivers]="driversSorted()"></app-race-leaderboard>
     </aside>
 
     <div class="stage">
@@ -177,32 +152,5 @@
     <div class="error">{{ errorMessage() }}</div>
   }
 
-  <section class="drivers">
-    <h3>Drivers</h3>
-    <div class="driver-grid">
-      @for (driver of driversSorted(); track trackByDriver($index, driver)) {
-        <article class="driver-card">
-          <div class="driver-main">
-            <div class="driver-face">
-              @if (driver.headshot_url) {
-                <img [src]="driver.headshot_url" [alt]="formatDriverName(driver)" loading="lazy" referrerpolicy="no-referrer" />
-              } @else {
-                <span>{{ (driver.name_acronym ?? (driver.driver_number ?? "?")) }}</span>
-              }
-            </div>
-            <div class="driver-ident">
-              <div class="driver-top">
-                <span class="driver-num">#{{ driver.driver_number ?? "-" }}</span>
-                <span class="driver-pos">P{{ driver.current_position ?? "-" }}</span>
-              </div>
-              <div class="driver-name">{{ formatDriverName(driver) }}</div>
-              <div class="driver-team">{{ driver.team_name ?? "Team n/a" }}</div>
-            </div>
-          </div>
-        </article>
-      } @empty {
-        <div class="empty-note">Keine Fahrerdaten vorhanden.</div>
-      }
-    </div>
-  </section>
+  <app-driver-grid [drivers]="driversSorted()"></app-driver-grid>
 </div>

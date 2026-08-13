@@ -1,0 +1,31 @@
+<h3>{{ title() }}</h3>
+
+<div class="position-list" [style.--driver-count]="drivers().length || 1">
+  @for (driver of drivers(); track trackByDriver($index, driver); let i = $index) {
+    <article
+      class="position-row"
+      [class.is-interactive]="interactive()"
+      [class.radio-active]="isRadioActive(driver.driver_number)"
+      [class.radio-solo]="isSolo(driver.driver_number)"
+      [attr.role]="interactive() ? 'button' : null"
+      [attr.tabindex]="interactive() ? 0 : null"
+      (click)="selectDriver(driver.driver_number)"
+      (keydown.enter)="selectDriver(driver.driver_number)"
+      (keydown.space)="selectDriverFromSpace($event, driver.driver_number)"
+    >
+      <div class="position-rank">P{{ driver.current_position ?? (i + 1) }}</div>
+      <div class="position-main">
+        <div class="position-name">{{ formatDriverName(driver) }}</div>
+        <div class="position-meta">{{ driver.team_name ?? "Team n/a" }}</div>
+      </div>
+      <div class="position-lap">
+        <span>Lap {{ driver.current_lap ?? "-" }}</span>
+        @if (isRadioHighlighted(driver.driver_number)) {
+          <span class="speaker-icon">RADIO</span>
+        }
+      </div>
+    </article>
+  } @empty {
+    <div class="empty-note">{{ emptyText() }}</div>
+  }
+</div>

@@ -1,0 +1,111 @@
+:host {
+  display: block;
+}
+
+.drivers {
+  margin-top: 14px;
+  border: 1px solid #2b3650;
+  border-radius: 10px;
+  background: #0d121bcc;
+  padding: 12px;
+}
+
+h3 {
+  margin: 0 0 10px;
+  color: #dce5f8;
+  font-size: 12px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.driver-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.driver-card {
+  border: 1px solid #25314a;
+  border-radius: 8px;
+  background: linear-gradient(155deg, #141c2b 0%, #0d1420 100%);
+  padding: 10px;
+}
+
+.driver-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.driver-face {
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 2px solid #d9e2f9;
+  background: #0d1421;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: #e7efff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.driver-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.driver-ident {
+  min-width: 0;
+  flex: 1;
+}
+
+.driver-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.driver-num {
+  color: #4fd18a;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.driver-pos {
+  color: #d8e0f3;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.driver-name {
+  color: #f8fbff;
+  font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.driver-team {
+  margin-top: 2px;
+  color: #9fb0cf;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.empty-note {
+  color: #9fb0cf;
+  font-size: 12px;
+}

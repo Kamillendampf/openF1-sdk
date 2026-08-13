@@ -1,0 +1,135 @@
+:host {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+h3 {
+  margin: 0 0 10px;
+  color: #dce5f8;
+  font-size: 12px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.position-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+:host-context(.track-shell:fullscreen) .position-list,
+:host-context(.track-shell:-webkit-full-screen) .position-list {
+  display: grid;
+  grid-template-rows: repeat(var(--driver-count), minmax(0, 1fr));
+  height: 100%;
+  max-height: none;
+  gap: 2px;
+  overflow: hidden;
+  padding-right: 0;
+}
+
+.position-row {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #25314a;
+  border-radius: 8px;
+  background: linear-gradient(155deg, #141c2b 0%, #0d1420 100%);
+  padding: 6px;
+}
+
+.position-row.is-interactive {
+  cursor: pointer;
+}
+
+:host-context(.track-shell:fullscreen) .position-row,
+:host-context(.track-shell:-webkit-full-screen) .position-row {
+  grid-template-columns: 32px 1fr auto;
+  gap: 6px;
+  border-radius: 6px;
+  padding: 2px 4px;
+  height: 100%;
+  min-height: 0;
+}
+
+.position-row.radio-active {
+  border-color: #5478a6;
+}
+
+.position-row.radio-solo {
+  border-color: #58b8d1;
+  box-shadow: 0 0 0 1px rgba(126, 231, 255, 0.45);
+}
+
+.position-rank {
+  color: #f8fbff;
+  font-weight: 800;
+  font-size: 12px;
+  text-align: center;
+}
+
+.position-main {
+  min-width: 0;
+}
+
+.position-name {
+  color: #f8fbff;
+  font-weight: 700;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:host-context(.track-shell:fullscreen) .position-name,
+:host-context(.track-shell:-webkit-full-screen) .position-name {
+  font-size: 11px;
+}
+
+.position-meta {
+  color: #9fb0cf;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:host-context(.track-shell:fullscreen) .position-meta,
+:host-context(.track-shell:-webkit-full-screen) .position-meta {
+  display: none;
+}
+
+.position-lap {
+  color: #dce5f8;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+:host-context(.track-shell:fullscreen) .position-lap,
+:host-context(.track-shell:-webkit-full-screen) .position-lap {
+  font-size: 10px;
+  gap: 4px;
+}
+
+.speaker-icon {
+  color: #b7f3ff;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+}
+
+.empty-note {
+  color: #9fb0cf;
+  font-size: 12px;
+}

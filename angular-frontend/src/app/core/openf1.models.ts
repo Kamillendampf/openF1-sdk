@@ -96,6 +96,30 @@ export interface TeamRadioInsightsPayload {
   circuit_name: string;
   events: TeamRadioEventPayload[];
   count: number;
+  skipped_count?: number;
+  generated_at: string;
+}
+
+export interface CarDataRowPayload {
+  date: string | null;
+  driver_number: number | null;
+  speed: number | null;
+  rpm: number | null;
+  n_gear: number | null;
+  throttle: number | null;
+  brake: number | null;
+  drs: number | null;
+}
+
+export interface CarDataInsightsPayload {
+  session_key: number | string;
+  meeting_key: number | string;
+  session_name: string;
+  session_type: string;
+  circuit_name: string;
+  driver_number: number;
+  latest: CarDataRowPayload | null;
+  window_seconds?: number | null;
   generated_at: string;
 }
 

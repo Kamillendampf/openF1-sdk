@@ -3,6 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
 import {
+  CarDataInsightsPayload,
   HistoryReplayInitPayload,
   HistoryReplayLapPayload,
   HistorySessionsPayload,
@@ -33,6 +34,11 @@ export class OpenF1ApiService {
 
   getTeamRadio(limit = 30): Observable<TeamRadioInsightsPayload> {
     return this.http.get<TeamRadioInsightsPayload>(this.apiUrl(`/api/insights/team-radio?limit=${limit}`));
+  }
+
+  getCarData(driverNumber: number): Observable<CarDataInsightsPayload> {
+    const params = new HttpParams().set('driver_number', driverNumber);
+    return this.http.get<CarDataInsightsPayload>(this.apiUrl('/api/insights/car-data'), { params });
   }
 
   getHistorySessions(year?: number, limit = 120): Observable<HistorySessionsPayload> {
