@@ -1,17 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, TYPE_CHECKING, cast
-import sys
-
-SDK_ROOT = Path(__file__).resolve().parent.parent / "f1-sdk"
-SDK_PACKAGE_ROOT = SDK_ROOT / "f1_sdk"
-if str(SDK_ROOT) not in sys.path:
-    sys.path.insert(0, str(SDK_ROOT))
-if str(SDK_PACKAGE_ROOT) not in __path__:
-    __path__.append(str(SDK_PACKAGE_ROOT))
 
 _sdk: Any | None = None
+
 
 if TYPE_CHECKING:
     from .resources import (
@@ -60,7 +52,7 @@ def _build_sdk(config: Any | None = None):
     except ModuleNotFoundError as exc:
         if exc.name == "httpx":
             raise ModuleNotFoundError(
-                "Missing dependency 'httpx'. Install dependencies with: pip install -e ./f1-sdk"
+                "Missing dependency 'httpx'. Install dependencies with: pip install -e ."
             ) from exc
         raise
 
@@ -96,24 +88,28 @@ def __getattr__(name: str):
         "OpenF1AuthError",
         "OpenF1LiveError",
         "OpenF1LiveClient",
+        "OpenF1SDK",
+        "AsyncOpenF1SDK",
         "OpenF1OAuthClient",
         "OpenF1OAuthConfig",
     }:
         try:
             from .client import (
                 F1Config,
+                AsyncOpenF1SDK,
                 OpenF1AuthError,
                 OpenF1LiveClient,
                 OpenF1LiveError,
                 OpenF1NoDataError,
                 OpenF1OAuthClient,
                 OpenF1OAuthConfig,
+                OpenF1SDK,
                 SessionScope,
             )
         except ModuleNotFoundError as exc:
             if exc.name == "httpx":
                 raise ModuleNotFoundError(
-                    "Missing dependency 'httpx'. Install dependencies with: pip install -e ./f1-sdk"
+                    "Missing dependency 'httpx'. Install dependencies with: pip install -e ."
                 ) from exc
             raise
 
@@ -127,6 +123,10 @@ def __getattr__(name: str):
             return OpenF1LiveError
         if name == "OpenF1LiveClient":
             return OpenF1LiveClient
+        if name == "OpenF1SDK":
+            return OpenF1SDK
+        if name == "AsyncOpenF1SDK":
+            return AsyncOpenF1SDK
         if name == "OpenF1OAuthClient":
             return OpenF1OAuthClient
         if name == "OpenF1OAuthConfig":
@@ -167,6 +167,8 @@ __all__ = [
     "OpenF1AuthError",
     "OpenF1LiveError",
     "OpenF1LiveClient",
+    "OpenF1SDK",
+    "AsyncOpenF1SDK",
     "OpenF1OAuthClient",
     "OpenF1OAuthConfig",
     "configure",

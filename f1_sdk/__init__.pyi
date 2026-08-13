@@ -31,6 +31,8 @@ def create_live_race_client(
     username: str,
     topics: tuple[str, ...] = ...,
     use_websocket: bool = ...,
+    min_connect_interval_seconds: float = ...,
+    max_connections_per_process: int = ...,
 ) -> OpenF1LiveClient: ...
 def create_live_client(
     *,
@@ -38,6 +40,8 @@ def create_live_client(
     username: str,
     topics: tuple[str, ...] = ...,
     use_websocket: bool = ...,
+    min_connect_interval_seconds: float = ...,
+    max_connections_per_process: int = ...,
 ) -> OpenF1LiveClient: ...
 
 car_data: Any

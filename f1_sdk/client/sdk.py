@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 import logging
@@ -12,7 +13,7 @@ from typing import TYPE_CHECKING
 from typing import Any, Callable, Mapping, TypeVar, cast
 
 from ..Models import CarData, Driver, F1BaseModel, Laps, Meeting, Position, RaceControl, Session, TeamRadio, Weather
-from .http import F1Config, HttpClient
+from .http import AsyncHttpClient, F1Config, HttpClient
 from ..resources import OpenF1Resources
 
 CacheValueT = TypeVar("CacheValueT")
@@ -251,6 +252,8 @@ class OpenF1SDK:
         username: str,
         topics: tuple[str, ...] = ("v1/position", "v1/laps", "v1/location"),
         use_websocket: bool = False,
+        min_connect_interval_seconds: float = 10.0,
+        max_connections_per_process: int = 10,
     ) -> OpenF1LiveClient:
         from .live import OpenF1LiveClient
 
@@ -260,6 +263,8 @@ class OpenF1SDK:
             username=username,
             topics=topics,
             use_websocket=use_websocket,
+            min_connect_interval_seconds=min_connect_interval_seconds,
+            max_connections_per_process=max_connections_per_process,
         )
 
     def create_live_race_client(
@@ -269,12 +274,16 @@ class OpenF1SDK:
         username: str,
         topics: tuple[str, ...] = ("v1/position", "v1/laps", "v1/location"),
         use_websocket: bool = False,
+        min_connect_interval_seconds: float = 10.0,
+        max_connections_per_process: int = 10,
     ) -> OpenF1LiveClient:
         return self.create_live_client(
             token_provider=token_provider,
             username=username,
             topics=topics,
             use_websocket=use_websocket,
+            min_connect_interval_seconds=min_connect_interval_seconds,
+            max_connections_per_process=max_connections_per_process,
         )
 
     def list_resource(
@@ -339,3 +348,183 @@ class OpenF1SDK:
 
     def session_scope(self, session_key: int | str = "latest", meeting_key: int | str | None = None) -> SessionScope:
         return SessionScope(self, session_key=session_key, meeting_key=meeting_key)
+
+
+class AsyncOpenF1SDK:
+    """
+    Async SDK facade using httpx.AsyncClient under the resource layer.
+    """
+
+    def __init__(self, config: F1Config | None = None):
+        self.http = AsyncHttpClient(config or F1Config())
+        self.resources = OpenF1Resources(self.http)
+        self._cache: dict[str, tuple[float, Any]] = {}
+        self._cache_lock = asyncio.Lock()
+        LOGGER.debug("AsyncOpenF1SDK initialized.")
+
+    async def close(self) -> None:
+        LOGGER.debug("Closing AsyncOpenF1SDK HTTP client.")
+        await self.http.close()
+
+    async def __aenter__(self) -> AsyncOpenF1SDK:
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        await self.close()
+
+    def __getattr__(self, name: str):
+        return getattr(self.resources, name)
+
+    def resource_names(self) -> tuple[str, ...]:
+        return self.resources.names()
+
+    async def invalidate_cache(self, key: str | None = None) -> None:
+        async with self._cache_lock:
+            if key is None:
+                self._cache.clear()
+                LOGGER.debug("Async SDK cache invalidated (all keys).")
+            else:
+                self._cache.pop(key, None)
+                LOGGER.debug("Async SDK cache invalidated (key=%s).", key)
+
+    async def get_or_load_cached(
+        self,
+        key: str,
+        loader: Callable[[], Any],
+        *,
+        ttl_seconds: float = 60.0,
+        force_refresh: bool = False,
+    ) -> Any:
+        ttl = max(0.0, float(ttl_seconds))
+        if not force_refresh and ttl > 0:
+            now = monotonic()
+            async with self._cache_lock:
+                cached = self._cache.get(key)
+            if cached is not None:
+                cached_at, cached_value = cached
+                if now - cached_at < ttl:
+                    LOGGER.debug("Async SDK cache hit (key=%s, ttl_seconds=%s).", key, ttl)
+                    return cached_value
+                LOGGER.debug("Async SDK cache stale (key=%s, age_seconds=%.2f, ttl_seconds=%s).", key, now - cached_at, ttl)
+            else:
+                LOGGER.debug("Async SDK cache miss (key=%s).", key)
+        elif force_refresh:
+            LOGGER.debug("Async SDK cache force refresh (key=%s).", key)
+
+        value = await loader()
+        async with self._cache_lock:
+            self._cache[key] = (monotonic(), value)
+        LOGGER.debug("Async SDK cache store (key=%s).", key)
+        return value
+
+    async def get_track_points(self, session_latest: Session) -> list[dict[str, int]]:
+        started = perf_counter()
+        LOGGER.info(
+            "Async track extraction started (session_key=%s, circuit_key=%s, session=%s/%s).",
+            session_latest.session_key,
+            session_latest.circuit_key,
+            session_latest.session_type,
+            session_latest.session_name,
+        )
+        session_type = session_latest.session_type
+        session_name = session_latest.session_name
+        current_year = session_latest.date_start
+        dt = datetime.fromisoformat(current_year)
+        last_year = current_year.replace(str(dt.year), str(dt.year - 1))
+        last_year_formated = datetime.fromisoformat(last_year).strftime("%Y")
+
+        last_session = await self.session.alist(
+            circuit_key=session_latest.circuit_key,
+            year=last_year_formated,
+            session_type=session_type,
+            session_name=session_name,
+        )
+        if not last_session:
+            LOGGER.warning("Async track extraction aborted: no reference session found.")
+            return []
+
+        last_session_key = last_session[0].session_key
+        session_result = await self.session_result.alist(session_key=last_session_key, position=1)
+        if not session_result:
+            LOGGER.warning("Async track extraction aborted: no session result for position=1 found.")
+            return []
+
+        driver_number = session_result[0].driver_number
+        locations = await self.location.alist(session_key=last_session_key, driver_number=driver_number)
+
+        track_points = [
+            {"x": location.x, "y": location.y, "z": location.z}
+            for location in locations
+        ]
+        filtered = OpenF1SDK.filter_track_points(self, track_points)
+        LOGGER.info(
+            "Async track extraction completed (raw_points=%d, filtered_points=%d, elapsed_ms=%d).",
+            len(track_points),
+            len(filtered),
+            int((perf_counter() - started) * 1000),
+        )
+        return filtered
+
+    async def get_track(self, session_latest: Session) -> list[dict[str, int]]:
+        LOGGER.debug("async get_track called (session_key=%s).", session_latest.session_key)
+        return await self.get_track_points(session_latest)
+
+    async def list_resource(
+        self,
+        resource_name: str,
+        params: Mapping[str, Any] | None = None,
+        **filters: Any,
+    ) -> list[F1BaseModel]:
+        resource = getattr(self.resources, resource_name)
+        return await resource.alist(params=params, **filters)
+
+    async def latest_resource(
+        self,
+        resource_name: str,
+        params: Mapping[str, Any] | None = None,
+        **filters: Any,
+    ) -> F1BaseModel:
+        resource = getattr(self.resources, resource_name)
+        return await resource.alatest(params=params, **filters)
+
+    async def latest_meeting(self, **filters: Any) -> Meeting:
+        return await self.meeting.alatest(**filters)
+
+    async def latest_session(
+        self, meeting_key: int | str = "latest", session_name: str | None = None, **filters: Any
+    ) -> Session:
+        query: dict[str, Any] = {"meeting_key": meeting_key}
+        if session_name is not None:
+            query["session_name"] = session_name
+        query.update(filters)
+        return await self.session.alatest(**query)
+
+    async def latest_race_session(self, meeting_key: int | str = "latest", **filters: Any) -> Session:
+        return await self.latest_session(meeting_key=meeting_key, session_name="Race", **filters)
+
+    async def drivers_for_session(self, session_key: int | str = "latest", **filters: Any) -> list[Driver]:
+        return await self.driver.alist(session_key=session_key, **filters)
+
+    async def weather_for_session(self, meeting_key: int | str = "latest", **filters: Any) -> list[Weather]:
+        return await self.weather.alist(meeting_key=meeting_key, **filters)
+
+    async def race_control_for_session(self, session_key: int | str = "latest", **filters: Any) -> list[RaceControl]:
+        return await self.race_control.alist(session_key=session_key, **filters)
+
+    async def laps_for_driver(self, driver_number: int, session_key: int | str = "latest", **filters: Any) -> list[Laps]:
+        return await self.lap.alist(driver_number=driver_number, session_key=session_key, **filters)
+
+    async def car_data_for_driver(
+        self, driver_number: int, session_key: int | str = "latest", **filters: Any
+    ) -> list[CarData]:
+        return await self.car_data.alist(driver_number=driver_number, session_key=session_key, **filters)
+
+    async def positions_for_driver(
+        self, driver_number: int, session_key: int | str = "latest", **filters: Any
+    ) -> list[Position]:
+        return await self.position.alist(driver_number=driver_number, session_key=session_key, **filters)
+
+    async def team_radio_for_driver(
+        self, driver_number: int, session_key: int | str = "latest", **filters: Any
+    ) -> list[TeamRadio]:
+        return await self.team_radio.alist(driver_number=driver_number, session_key=session_key, **filters)

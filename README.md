@@ -2,7 +2,6 @@
 
 Die vollstaendige Dokumentation zur Facade und allen Resources findest du hier:
 
-
 ## Installation
 
 Voraussetzungen:

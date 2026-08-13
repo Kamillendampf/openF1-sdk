@@ -1,7 +1,7 @@
 [project]
 name = "openf1sdk"
 version = "0.0.1"
-description = "Comunity Python SDK for the OpenF1 REST API (only free tier supported)"
+description = "Community Python SDK for the OpenF1 REST API"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
@@ -16,4 +16,4 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["client*", "Models*", "resources*", "f1_sdk*"]
+include = ["f1_sdk*"]

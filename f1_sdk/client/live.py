@@ -8,7 +8,7 @@ import logging
 import os
 import ssl
 from threading import Event, Lock
-from time import sleep
+from time import monotonic, sleep
 from typing import Any, Callable, Optional, TYPE_CHECKING
 
 from .errors import OpenF1LiveError
@@ -26,6 +26,9 @@ class OpenF1LiveClient:
     MQTT-based live stream client for OpenF1.
     """
 
+    _process_connection_lock = Lock()
+    _process_connection_count = 0
+
     def __init__(
         self,
         sdk: OpenF1SDK,
@@ -40,6 +43,8 @@ class OpenF1LiveClient:
         websocket_path: str = "/mqtt",
         keepalive_seconds: int = 60,
         connect_timeout_seconds: float = 10.0,
+        min_connect_interval_seconds: float = 10.0,
+        max_connections_per_process: int = 10,
         track_cache_ttl_seconds: float = 900.0,
     ):
         self._sdk = sdk
@@ -53,6 +58,8 @@ class OpenF1LiveClient:
         self._websocket_path = websocket_path
         self._keepalive_seconds = keepalive_seconds
         self._connect_timeout_seconds = connect_timeout_seconds
+        self._min_connect_interval_seconds = max(0.0, float(min_connect_interval_seconds))
+        self._max_connections_per_process = max(1, int(max_connections_per_process))
         self._track_cache_ttl_seconds = track_cache_ttl_seconds
 
         self._state_lock = Lock()
@@ -62,6 +69,8 @@ class OpenF1LiveClient:
         self._last_auth_username_masked: str | None = None
         self._last_auth_token_length: int | None = None
         self._last_auth_token_fingerprint: str | None = None
+        self._last_connect_attempt_at: float | None = None
+        self._connection_slot_acquired = False
         self._running = False
         self._latest_msg_id_by_topic: dict[str, int] = {}
         self._state: dict[str, Any] = {
@@ -204,6 +213,48 @@ class OpenF1LiveClient:
                 "Missing dependency 'paho-mqtt'. Install with: pip install paho-mqtt"
             ) from exc
         return mqtt
+
+    def _acquire_connection_slot(self) -> None:
+        with self._process_connection_lock:
+            if self.__class__._process_connection_count >= self._max_connections_per_process:
+                raise OpenF1LiveError(
+                    "MQTT connection limit reached for this process "
+                    f"({self.__class__._process_connection_count}/{self._max_connections_per_process})."
+                )
+            self.__class__._process_connection_count += 1
+            self._connection_slot_acquired = True
+            LOGGER.info(
+                "MQTT process connection slot acquired (%d/%d).",
+                self.__class__._process_connection_count,
+                self._max_connections_per_process,
+            )
+
+    def _release_connection_slot(self) -> None:
+        if not self._connection_slot_acquired:
+            return
+        with self._process_connection_lock:
+            self.__class__._process_connection_count = max(0, self.__class__._process_connection_count - 1)
+            self._connection_slot_acquired = False
+            LOGGER.info(
+                "MQTT process connection slot released (%d/%d).",
+                self.__class__._process_connection_count,
+                self._max_connections_per_process,
+            )
+
+    def _wait_for_connect_rate_limit(self) -> None:
+        if self._last_connect_attempt_at is None:
+            self._last_connect_attempt_at = monotonic()
+            return
+
+        elapsed = monotonic() - self._last_connect_attempt_at
+        wait_seconds = self._min_connect_interval_seconds - elapsed
+        if wait_seconds > 0:
+            LOGGER.info(
+                "MQTT connect attempt delayed by %.1fs to respect local rate limit.",
+                wait_seconds,
+            )
+            sleep(wait_seconds)
+        self._last_connect_attempt_at = monotonic()
 
     def _require_access_token(self, force_refresh: bool = False) -> str:
         token = self._token_provider(force_refresh)
@@ -455,11 +506,17 @@ class OpenF1LiveClient:
         if self._running:
             return
 
-        self._bootstrap_state()
-        mqtt = self._ensure_mqtt_module()
-        token = self._require_access_token(force_refresh=True)
+        self._acquire_connection_slot()
+        try:
+            self._bootstrap_state()
+            mqtt = self._ensure_mqtt_module()
+            token = self._require_access_token(force_refresh=True)
+        except Exception:
+            self._release_connection_slot()
+            raise
         protocol_candidates = self._resolve_protocol_candidates(mqtt)
         if not protocol_candidates:
+            self._release_connection_slot()
             raise OpenF1LiveError("No supported MQTT protocol constants found in paho-mqtt.")
         transport_candidates = self._resolve_transport_candidates()
         self._last_auth_username_masked = self._mask_identity(self._username)
@@ -532,14 +589,26 @@ class OpenF1LiveClient:
                     self._last_auth_token_length if self._last_auth_token_length is not None else "<unknown>",
                     self._last_auth_token_fingerprint or "<unknown>",
                 )
-                client.connect(self._broker, connect_port, self._keepalive_seconds)
+                self._wait_for_connect_rate_limit()
+                try:
+                    client.connect(self._broker, connect_port, self._keepalive_seconds)
+                except Exception as exc:  # noqa: BLE001
+                    self._close_mqtt_client()
+                    last_error = OpenF1LiveError(f"MQTT connection attempt failed: {exc}")
+                    LOGGER.warning(
+                        "MQTT connect call failed on transport=%s protocol=%s: %s",
+                        transport_name,
+                        protocol_name,
+                        exc,
+                    )
+                    break
                 client.loop_start()
 
                 if not self._connected_event.wait(timeout=self._connect_timeout_seconds):
-                    self.stop()
+                    self._close_mqtt_client()
                     last_error = OpenF1LiveError("MQTT connection timed out.")
                 elif self._connect_rc != 0:
-                    self.stop()
+                    self._close_mqtt_client()
                     last_error = OpenF1LiveError(f"MQTT connection failed with rc={self._connect_rc}.")
                 else:
                     LOGGER.info(
@@ -574,11 +643,10 @@ class OpenF1LiveClient:
             if transport_idx < total_transports:
                 LOGGER.warning("Switching MQTT transport to next candidate after failed attempt (%s).", transport_name)
 
+        self._release_connection_slot()
         raise last_error or OpenF1LiveError("MQTT connection failed with all transport/protocol candidates.")
 
-    def stop(self) -> None:
-        if not self._running:
-            return
+    def _close_mqtt_client(self) -> None:
         self._running = False
         if self._mqtt_client is not None:
             try:
@@ -587,6 +655,13 @@ class OpenF1LiveClient:
             except Exception:  # noqa: BLE001
                 pass
         self._mqtt_client = None
+
+    def stop(self) -> None:
+        if not self._running:
+            self._release_connection_slot()
+            return
+        self._close_mqtt_client()
+        self._release_connection_slot()
         LOGGER.info("Live client stopped.")
 
     def get_snapshot(self) -> dict[str, Any]:

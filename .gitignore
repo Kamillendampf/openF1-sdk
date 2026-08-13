@@ -1,1 +1,9 @@
 config/openf1.auth.ini
+
+# Python cache/build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# IDE files
+.idea/

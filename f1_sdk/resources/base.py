@@ -4,7 +4,7 @@ from typing import Any, Generic, Mapping, TypeVar
 
 from ..Models import F1BaseModel
 from ..client.errors import OpenF1NoDataError
-from ..client.http import HttpClient
+from ..client.http import AsyncHttpClient, HttpClient
 
 ModelT = TypeVar("ModelT", bound=F1BaseModel)
 
@@ -16,7 +16,7 @@ class ModelResource(Generic[ModelT]):
 
     def __init__(
         self,
-        http: HttpClient,
+        http: HttpClient | AsyncHttpClient,
         path: str,
         model_type: type[ModelT],
         latest_by: str | None = None,
@@ -57,6 +57,36 @@ class ModelResource(Generic[ModelT]):
             query[self._latest_param] = "latest"
 
         items = self.list(params=query if query else None)
+        if not items:
+            raise OpenF1NoDataError(f"No data returned for endpoint '{self._path}'")
+
+        if self._latest_param and self._latest_by:
+            return max(items, key=lambda item: getattr(item, self._latest_by))
+        if self._latest_param:
+            return items[0]
+
+        if not self._latest_by:
+            return items[-1]
+        return max(items, key=lambda item: getattr(item, self._latest_by))
+
+    async def alist(self, params: Mapping[str, Any] | None = None, **filters: Any) -> list[ModelT]:
+        query: dict[str, Any] = dict(params or {})
+        query.update(self._compact(filters))
+        get_list = getattr(self._http, "get_list")
+        raw_items = await get_list(self._path, params=query if query else None)
+        return [self._model_type.model_validate(item) for item in raw_items]
+
+    async def aall(self, params: Mapping[str, Any] | None = None, **filters: Any) -> list[ModelT]:
+        return await self.alist(params=params, **filters)
+
+    async def alatest(self, params: Mapping[str, Any] | None = None, **filters: Any) -> ModelT:
+        query: dict[str, Any] = dict(params or {})
+        query.update(self._compact(filters))
+
+        if self._latest_param:
+            query[self._latest_param] = "latest"
+
+        items = await self.alist(params=query if query else None)
         if not items:
             raise OpenF1NoDataError(f"No data returned for endpoint '{self._path}'")
 
