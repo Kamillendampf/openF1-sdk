@@ -1,31 +1,49 @@
 # openF1 Workspace
 
-Die vollstaendige Dokumentation zur Facade und allen Resources findest du hier:
+The complete documentation for the OpenF1 API itself, including all available API resources and endpoints, can be found here:
+
+https://openf1.org/
 
 ## Installation
 
-Voraussetzungen:
+Requirements:
 
-- Python 3.9 oder neuer
-- optional Node.js, falls das Angular-Frontend lokal neu gebaut werden soll
+- Python 3.9 or newer
+- optionally Node.js, if the Angular frontend should be rebuilt locally
 
-Backend installieren und starten:
+Install and start the backend:
 
 ```bash
 pip install -r requirements.txt
 python main.py
 ```
 
-Falls OAuth fuer Live-Daten genutzt werden soll, muss die Konfiguration in `config/openf1.auth.ini` gesetzt werden.
+### OAuth and Live Data
 
-Falls das Angular-Frontend auf dem Zielsystem neu gebaut werden soll:
+If OAuth is required for accessing live data, the configuration must be provided in:
+
+```text
+config/openf1.auth.ini
+```
+
+An OpenF1 account and the appropriate API access may be required to use live sessions.
+
+You can register for the OpenF1 API and subscribe to the available paid API plans here:
+
+https://openf1.org/
+
+The availability of live data, subscription plans, pricing, and API access conditions are defined and managed exclusively by OpenF1 and may change at any time.
+
+This project is not affiliated with OpenF1's pricing decisions and assumes **no responsibility or liability for OpenF1 pricing, subscription fees, pricing changes, subscription conditions, or the availability of OpenF1 services**.
+
+If the Angular frontend should be rebuilt on the target system:
 
 ```bash
 cd angular-frontend
 npm install
 ```
 
-## Kurzstart
+## Quick Start
 
 ```python
 import f1_sdk as f1
